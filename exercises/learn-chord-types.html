@@ -158,6 +158,14 @@ const COURSE = {
       { id:"m1", type:"review", title:"Everything Mixed",   q:["maj","min","dim","maj7","min7","dom7","dim7"], inv:"any" },
       { id:"m2", type:"play",   title:"Grand Boss",         q:["maj","min","dim","maj7","min7","dom7","dim7"], inv:"any" },
     ]},
+    { title:"Unit 4 · Advanced Colors", lessons:[
+      { id:"a1", type:"learn",  title:"Augmented",              q:["maj","min","aug"],                                     inv:"root" },
+      { id:"a2", type:"learn",  title:"Suspended (sus2 · sus4)",q:["maj","sus2","sus4"],                                   inv:"root" },
+      { id:"a3", type:"learn",  title:"Half-diminished 7th",    q:["min7","dom7","m7b5"],                                  inv:"root" },
+      { id:"a4", type:"learn",  title:"Add 9",                  q:["maj","maj7","add9"],                                   inv:"root" },
+      { id:"a5", type:"review", title:"Advanced Review",        q:["maj","min","aug","sus2","sus4","m7b5","add9"],         inv:"any"  },
+      { id:"a6", type:"play",   title:"Advanced Boss",          q:["maj","min","aug","sus2","sus4","dom7","m7b5","add9"],  inv:"any"  },
+    ]},
   ],
 };
 
@@ -200,7 +208,7 @@ $("backBtn").onclick = endToMap;
 // =====================================================================
 //  LESSON RUNNER
 // =====================================================================
-let sess = null, rafId = null;
+let sess = null, timerId = null;
 const CFG = {
   masterN: 3,           // consecutive correct per type to master it
   playTarget: 12,       // correct hits to beat a boss
@@ -410,16 +418,16 @@ function perfNow(){ return (window.performance && performance.now) ? performance
 function startTimer(){
   stopTimer();
   const dur = sess.ninjaMs, start = perfNow();
-  barEl.style.opacity = 1;
-  (function tick(){
-    if (!sess || sess.over || sess.answered) return;
+  barEl.style.opacity = 1; barEl.style.transform = "scaleX(1)";
+  // setInterval (not rAF) so the countdown survives a blurred/hidden tab
+  timerId = setInterval(function(){
+    if (!sess || sess.over || sess.answered){ stopTimer(); return; }
     const left = 1 - (perfNow()-start)/dur;
-    if (left <= 0){ barEl.style.transform = "scaleX(0)"; resolve(false); return; }
-    barEl.style.transform = "scaleX("+left+")";
-    rafId = requestAnimationFrame(tick);
-  })();
+    if (left <= 0){ stopTimer(); barEl.style.transform = "scaleX(0)"; resolve(false); return; }
+    barEl.style.transform = "scaleX("+left.toFixed(3)+")";
+  }, 50);
 }
-function stopTimer(){ if (rafId){ cancelAnimationFrame(rafId); rafId = null; } barEl.style.transform = "scaleX(1)"; }
+function stopTimer(){ if (timerId){ clearInterval(timerId); timerId = null; } barEl.style.transform = "scaleX(1)"; }
 
 // ---- settings wiring ----
 $("autoHear").onchange = e=> state.autoHear = e.target.checked;
