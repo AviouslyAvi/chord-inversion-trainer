@@ -17,15 +17,21 @@ Reusable internals confirmed in the current `index.html`:
 
 ## Dependency / order table
 
-| Batch | Scope | Items | Depends on |
-|---|---|---|---|
-| **0** | Shared foundation + landing hub | Extract theory/audio/piano/MIDI/store/CSS into `shared/*`; build `index.html` hub; move trainer stub | — |
-| **1** | Chord Identification | keyboard-chord + ear-chord | Batch 0 |
-| **2** | Interval Trainer | keyboard-interval + ear-interval | Batch 0 |
-| **3** | Scale Identification | keyboard-scale | Batch 0 |
-| **4** | Ear: Melody / Keyboard playback | ear-keyboard | Batch 0 |
-| **5** | Note Finder (reverse) | keyboard-reverse | Batch 0 |
-| **6** | Port existing Chord Inversion Trainer | move into `exercises/` on shared foundation | Batch 0 |
+| Batch | Scope | Items | Depends on | Status |
+|---|---|---|---|---|
+| **0** | Shared foundation + landing hub | Extract theory/audio/piano/MIDI/store/CSS into `shared/*`; build `index.html` hub; move trainer stub | — | ✅ DONE (on master `90d7d6a`) |
+| **1** | Chord Identification | keyboard-chord + ear-chord | Batch 0 | ⬜ ready to build |
+| **2** | Interval Trainer | keyboard-interval + ear-interval | Batch 0 | ⬜ ready to build |
+| **3** | Scale Identification | keyboard-scale | Batch 0 | ⬜ ready to build |
+| **4** | Ear: Melody / Keyboard playback | ear-keyboard | Batch 0 | ⬜ ready to build |
+| **5** | Note Finder (reverse) | keyboard-reverse | Batch 0 | ⬜ ready to build |
+| **6** | Port existing Chord Inversion Trainer | move into `exercises/` on shared foundation | Batch 0 | ✅ DONE (folded into Batch 0 → `exercises/chord-inversion.html`) |
+
+> **Foundation is live.** Batch 0 shipped `shared/theory.js`, `shared/audio.js`,
+> `shared/piano.js`, `shared/midi.js`, `shared/store.js`, `shared/shell.js`,
+> `shared/base.css`, the `index.html` hub, and `exercises/_template.html`
+> (copy the template to start any exercise). Batches 1–5 can now run in parallel;
+> skip Batch 6 (already done).
 
 **Recommended order:** Batch 0 first, alone and **merged before anything else**.
 Then Batches 1–6 in **any order, fully in parallel** (each touches only its own
