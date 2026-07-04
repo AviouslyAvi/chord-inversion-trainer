@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<!--
+  EXERCISE PAGE TEMPLATE — copy this to exercises/<your-exercise>.html and fill it in.
+
+  Standard include order (all shared modules attach to window.Trainer):
+    theory.js  audio.js  piano.js  midi.js  store.js  shell.js
+
+  Shared API you build against (see shared/*.js for full signatures):
+    Trainer.theory  — NOTE_NAMES, ROOTS, CHORD_TYPES, INV_NAMES, INTERVALS, SCALE_TYPES,
+                      voicing(), voicingMidi(), scaleMidi(), noteName()
+    Trainer.audio   — ac(), loadInstrument(key,onStatus), playNote(midi,durMs,whenMs,gain),
+                      playNotes(midiArr,{stagger,durMs,gain}), hearNotes(midiArr), stopAll()
+    Trainer.piano   — create(el,{onNoteOn,onNoteOff,labels,sound,lowMidi,highMidi})
+                      -> {draw, noteOn, noteOff, held, highlight(pcs), clearHighlight, clear, setLabels, setSound}
+    Trainer.midi    — init({onNoteOn,onNoteOff,selectEl,statusEl,helpEl})
+    Trainer.store   — open(storeKey[, migrateFromKey])
+                      -> {correct,total,best,misses, bumpMiss(k), weightFor(k), save(), resetAll()}
+    Trainer.shell   — mount({mountEl,title,subtitle,settingsSections:[{title,html}]})
+                      -> {midiSelectEl, statusEl, helpEl, openSettings, closeSettings, isSettingsOpen}
+
+  Interaction rule: PLAY on the keyboard where natural (reproduce what you hear/see);
+  use tap answers styled like .chip for pure "name what's shown" identification.
+  Mouse/touch on the on-screen piano must always work (Web MIDI is optional).
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#07080c" />
+<title>Exercise Name</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="../shared/base.css" />
+</head>
+<body>
+<div class="wrap" id="app">
+  <!-- Trainer.shell injects topbar + MIDI help banner here -->
+
+  <div class="hero">
+    <div class="eyebrow">Prompt label</div>
+    <div id="prompt" class="chord-name"><span class="root">—</span></div>
+    <div id="feedback" class="feedback"></div>
+    <div id="timerbar" class="timerbar"></div>
+  </div>
+
+  <div class="controls">
+    <button id="hearBtn" class="playbtn" aria-label="Hear it" title="Hear it"><span class="tri">▶</span></button>
+    <button id="skipBtn" class="secondary">Skip ⏭</button>
+  </div>
+
+  <div class="piano-wrap"><div id="piano" class="piano"></div></div>
+
+  <div class="stats-row">
+    <div class="stats">
+      <div class="stat"><div id="streak" class="n">0</div><div class="l">Streak</div></div>
+      <div class="stat"><div id="correct" class="n">0</div><div class="l">Correct</div></div>
+      <div class="stat"><div id="total" class="n">0</div><div class="l">Attempts</div></div>
+      <div class="stat"><div id="acc" class="n">—</div><div class="l">Accuracy</div></div>
+    </div>
+  </div>
+</div>
+
+<script src="../shared/theory.js"></script>
+<script src="../shared/audio.js"></script>
+<script src="../shared/piano.js"></script>
+<script src="../shared/midi.js"></script>
+<script src="../shared/store.js"></script>
+<script src="../shared/shell.js"></script>
+<script>
+"use strict";
+const store = Trainer.store.open("EXERCISE_KEY");
+
+const shell = Trainer.shell.mount({
+  mountEl: document.getElementById("app"),
+  title: "Exercise Name", subtitle: "hands free",
+  settingsSections: [
+    // { title:"Section", html:`<h4>…</h4> …` },
+  ],
+});
+
+const piano = Trainer.piano.create(document.getElementById("piano"), {
+  onNoteOn(n){ /* evaluate() */ },
+  onNoteOff(n){ /* re-check */ },
+});
+Trainer.midi.init({
+  onNoteOn: n=> piano.noteOn(n),
+  onNoteOff: n=> piano.noteOff(n),
+  selectEl: shell.midiSelectEl, statusEl: shell.statusEl, helpEl: shell.helpEl,
+});
+
+// TODO: pickRandom(), render(), evaluate(), updateStats(), init…
+Trainer.audio.loadInstrument("piano");
+</script>
+</body>
+</html>
