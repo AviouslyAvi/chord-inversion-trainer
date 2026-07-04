@@ -11,10 +11,14 @@ Trainer.theory = (function(){
     "min":  {label:"minor",         symbol:"min", intervals:[0,3,7]},
     "dim":  {label:"diminished",    symbol:"dim", intervals:[0,3,6]},
     "aug":  {label:"augmented",     symbol:"aug", intervals:[0,4,8]},
+    "sus2": {label:"suspended 2nd", symbol:"sus2",intervals:[0,2,7]},
+    "sus4": {label:"suspended 4th", symbol:"sus4",intervals:[0,5,7]},
     "maj7": {label:"major 7th",     symbol:"maj7",intervals:[0,4,7,11]},
     "min7": {label:"minor 7th",     symbol:"min7",intervals:[0,3,7,10]},
     "dom7": {label:"dominant 7th",  symbol:"7",   intervals:[0,4,7,10]},
     "dim7": {label:"diminished 7th",symbol:"dim7",intervals:[0,3,6,9]},
+    "m7b5": {label:"half-diminished 7th", symbol:"m7♭5", intervals:[0,3,6,10]},
+    "add9": {label:"add 9",         symbol:"add9",intervals:[0,4,7,2]},
   };
   const INV_NAMES = ["Root position","1st inversion","2nd inversion","3rd inversion"];
 

@@ -106,7 +106,12 @@ Naturals-first, full quality+inversion+root ladder.
 | | + 3rd (+dim7) | +dim7 | all four | naturals |
 | | **Triads Return (mixed)** `i12` | **triads + 7ths** | all | naturals |
 | 4 · Full Mastery (all keys) | Full mastery `i11` | **triads + 7ths** | all | **all 12** 🎉 |
-| 5 · Advanced (future) | aug, sus, extended | … | … | … |
+| 5 · Advanced (white keys) | Augmented (root) `i13` | maj, aug | root | naturals |
+| | Suspended (root) `i14` | sus2, sus4 | root | naturals |
+| | + Suspended inversions `i15` | sus2, sus4 | root,1st,2nd | naturals |
+| | Half-diminished 7th `i16` | min7, m7♭5 | all four | naturals |
+| | Add 9 `i17` | maj, add9 | all four | naturals |
+| 6 · Advanced Mastery (all keys) | Advanced Mastery `i18` | aug, sus2, sus4, m7♭5, add9 | all | **all 12** 🎉 |
 
 - **Interleaving/spacing added 2026-07-04:** `i12` "Triads Return (mixed)" is a
   new spacing checkpoint at the end of Unit 3 — triads (learned in Units 1–2 then
@@ -169,7 +174,24 @@ Naturals-first, full quality+inversion+root ladder.
   **Open question for user:** `i12`/`i11` are heavy (7 qualities × 3-in-a-row). If
   they drag in play-testing, drop `masterN` 3→2 for `review`-type tiles. Left at 3
   pending user call.
-- [ ] Advanced units (aug, sus, extended) — append as later units, no engine change
+- [x] **Advanced units built** (2026-07-04) — added 4 chord types to `theory.js`:
+  `sus2 [0,2,7]`, `sus4 [0,5,7]`, `m7b5 [0,3,6,10]` (half-dim 7th), `add9 [0,4,7,2]`
+  (`aug` already existed). Scope chosen = suspended + half-dim + add9, all **4-note
+  max** so no 5-note voicings / no `INV_NAMES[4]` needed; `m7♭5` carries genuine
+  "extended/altered" weight (the ii° of every minor key). **Course A** gained
+  `Unit 4 · Advanced Colors` (`a1`–`a6`: Augmented → Suspended → Half-dim 7th →
+  Add 9 → Advanced Review → Advanced Boss). **Course B** gained `Unit 5 · Advanced
+  (white keys)` (`i13`–`i17`: aug/sus root → sus inversions → m7♭5 → add9) +
+  `Unit 6 · Advanced Mastery (all keys)` (`i18`, all 5 across 12 keys). All new
+  ids, no old ids touched (progress-safe). Browser-verified on port 8873: Course A
+  = 4 units/20 tiles, Course B = 6 units/19 tiles; `skillsFor()` `inv<n` guard
+  correctly gives aug/sus root/1st/2nd and m7♭5/add9 root→3rd; voicing math checked
+  (`add9` inv1, `m7♭5` inv3); labels render; no console errors. **Side effect
+  (intended):** the free-play `chord-id.html` / `chord-inversion.html` now include
+  these 4 types by default (all type-chips start "on") — verified no ID ambiguity
+  (only `dim7` is transposition-symmetric; the 4 new sets are unique).
+- Advanced *extended* (5-note 9ths, aug7, etc.) still open as a future tier — would
+  need `INV_NAMES` extended past 3rd inversion.
 - [x] **Course A boss/timed lessons play-tested** (t6 Triad, s5 Seventh, m2 Grand).
   Verified in browser: all three init with correct type sets/chips/hearts/target;
   **win** path (12 correct → speed ramps 4600→2440ms, 5 stars, 100%); **lose** path

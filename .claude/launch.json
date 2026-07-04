@@ -12,6 +12,12 @@
       "runtimeExecutable": "python3",
       "runtimeArgs": ["-m", "http.server", "8899"],
       "port": 8899
+    },
+    {
+      "name": "suite-adv",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8873"],
+      "port": 8873
     }
   ]
 }
