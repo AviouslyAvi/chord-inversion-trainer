@@ -839,15 +839,14 @@ function showMidiHelp(reason){
   let html;
   if (b === "gecko"){
     html = `<h4>⚠️ Web MIDI is turned off in your browser (Firefox / Zen family)</h4>
-      Zen is built on Firefox, which ships with Web MIDI <b>disabled</b> and <b>gated</b>. You need to flip <b>two</b> flags:
+      Zen is built on Firefox, which ships with Web MIDI <b>disabled</b>. To turn it on:
       <ol>
         <li>Open a new tab and go to <code>about:config</code>, then accept the warning.</li>
         <li>Search for <code>webmidi</code>.</li>
         <li>Double-click <code>dom.webmidi.enabled</code> so it reads <b>true</b>.</li>
-        <li>Double-click <code>dom.webmidi.gated</code> so it reads <b>false</b> — this is the key step; leaving it <b>true</b> blocks the normal permission prompt.</li>
         <li>Fully restart the browser, reload this page, and allow the MIDI permission if prompted.</li>
       </ol>
-      If your device still doesn't appear after that, open this page in <b>Chrome, Edge, or Brave</b> — it just works there. Mouse &amp; touch work here either way.`;
+      Still not connecting? Try also setting <code>dom.webmidi.gated</code> to <b>false</b>. If your device still doesn't appear, open this page in <b>Chrome, Edge, or Brave</b> — it just works there. Mouse &amp; touch work here either way.`;
   } else if (b === "safari"){
     html = `<h4>⚠️ Safari doesn't support Web MIDI</h4>
       Safari (WebKit) has no Web MIDI at all. Open this page in <b>Chrome, Edge, or Brave</b> to use your MIDI keyboard. Mouse &amp; touch work here either way.`;
