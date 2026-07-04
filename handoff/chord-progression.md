@@ -16,6 +16,7 @@ and **inversion** (root → 1st → 2nd → 3rd).
 | Roots ramp | **Naturals first** (white-key roots), widen to all 12 as a later milestone — applies to the *Inversion* course where roots matter |
 | Ladder depth | **Full ladder to 3rd inversion** (requires 7th chords). Open to advanced chord types (aug, sus, extended) as later/advanced levels |
 | Chord ID scope | User only cares about the **chord type**, not the specific notes/root. Renamed concept: **"Chord Type Identification."** Answers are type-only (`Major`, `Minor`, `Dominant 7th`…), not `C major`. Inversions appear in later levels as harder *recognition* (answer stays type-only). |
+| Ordering pedagogy | **Blocked-intro → interleaved-review → spaced-finale.** Introduce each new shape in isolation (fast early wins), then fold it back into a mixed pool, then re-surface old shapes in later units so they don't decay. Do **not** group purely by shape-similarity end-to-end — it feels fast but kills long-term retention + discrimination between look-alike chords. (Discussed 2026-07-04; interleaving > blocking for retention.) |
 
 ---
 
@@ -103,9 +104,19 @@ Naturals-first, full quality+inversion+root ladder.
 | | + 1st | 7ths | root,1st | naturals |
 | | + 2nd | 7ths | root,1st,2nd | naturals |
 | | + 3rd (+dim7) | +dim7 | all four | naturals |
-| 4 · Sevenths (all keys) | Full mastery | all 7ths | all | **all 12** 🎉 |
+| | **Triads Return (mixed)** `i12` | **triads + 7ths** | all | naturals |
+| 4 · Full Mastery (all keys) | Full mastery `i11` | **triads + 7ths** | all | **all 12** 🎉 |
 | 5 · Advanced (future) | aug, sus, extended | … | … | … |
 
+- **Interleaving/spacing added 2026-07-04:** `i12` "Triads Return (mixed)" is a
+  new spacing checkpoint at the end of Unit 3 — triads (learned in Units 1–2 then
+  dropped) are shuffled back in with the sevenths, so the learner must discriminate
+  e.g. min triad vs. min7, 2nd-inv triad vs. 2nd-inv 7th. `i11` "Full Mastery" was
+  **fixed**: it previously tested only `maj7/min7/dom7/dim7` (triads silently
+  omitted from the finale); now it mixes all 7 qualities × all inversions × all 12
+  keys. All existing lesson `id`s preserved (only `i12` is new) so saved star
+  progress survives. `skillsFor()` already guards `inv < n`, so triads in mixed
+  lessons correctly get root/1st/2nd only while 7ths also get 3rd.
 - **Gate:** 3-in-a-row per (quality×inversion) skill, pooled across active roots.
 - Reuse `chord-inversion.html`'s evaluate() logic (exact voicing, or open-voicing
   option) for the lesson runner.
@@ -149,6 +160,15 @@ Naturals-first, full quality+inversion+root ladder.
   wrong→reset+reveal+highlight, full lesson clear (mastery pooled across roots C/G/E),
   result screen, localStorage persistence + unlock propagation, open-voicing accept,
   hub card link. No timed bosses in this course (pure mastery ladder, per spec).
+- [x] **Course B interleaving + spacing pass** (2026-07-04) — added `i12` "Triads
+  Return (mixed)" spacing checkpoint (triads shuffled back in with sevenths, white
+  keys) and fixed the `i11` "Full Mastery" finale to actually mix triads + sevenths
+  across all 12 keys (was sevenths-only). Unit 4 retitled "Full Mastery (all keys)".
+  All old `id`s preserved (progress-safe); only `i12` new. Browser-verified: map
+  renders 13 tiles in 4 units, new tile + retitle present, no console errors.
+  **Open question for user:** `i12`/`i11` are heavy (7 qualities × 3-in-a-row). If
+  they drag in play-testing, drop `masterN` 3→2 for `review`-type tiles. Left at 3
+  pending user call.
 - [ ] Advanced units (aug, sus, extended) — append as later units, no engine change
 - [x] **Course A boss/timed lessons play-tested** (t6 Triad, s5 Seventh, m2 Grand).
   Verified in browser: all three init with correct type sets/chips/hearts/target;

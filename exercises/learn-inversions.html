@@ -152,9 +152,15 @@ const COURSE = {
       { id:"i8",  type:"learn",  title:"+ 1st inversion",     q:["maj7","min7","dom7"],        inv:[0,1],     roots:"naturals" },
       { id:"i9",  type:"learn",  title:"+ 2nd inversion",     q:["maj7","min7","dom7"],        inv:[0,1,2],   roots:"naturals" },
       { id:"i10", type:"learn",  title:"+ 3rd (+dim7)",       q:["maj7","min7","dom7","dim7"], inv:[0,1,2,3], roots:"naturals" },
+      // Spacing checkpoint: the triads you learned in Unit 1–2 return, now shuffled
+      // in with the sevenths. This is where interleaving does its real work —
+      // telling a min triad from a min7, a 2nd-inv triad from a 2nd-inv 7th.
+      { id:"i12", type:"review", title:"Triads Return (mixed)", q:["maj","min","dim","maj7","min7","dom7","dim7"], inv:[0,1,2,3], roots:"naturals" },
     ]},
-    { title:"Unit 4 · Sevenths (all keys)", lessons:[
-      { id:"i11", type:"play",   title:"Full Mastery 🎉",     q:["maj7","min7","dom7","dim7"], inv:[0,1,2,3], roots:"all" },
+    // Full mastery genuinely mixes BOTH families across all 12 keys — the finale
+    // has to test what the whole course taught, not just the last unit.
+    { title:"Unit 4 · Full Mastery (all keys)", lessons:[
+      { id:"i11", type:"play",   title:"Full Mastery 🎉",     q:["maj","min","dim","maj7","min7","dom7","dim7"], inv:[0,1,2,3], roots:"all" },
     ]},
   ],
 };
