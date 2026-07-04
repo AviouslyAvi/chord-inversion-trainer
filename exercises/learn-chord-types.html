@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<!--
+  LEARN CHORD TYPES — a guided, TypingClub-style course for recognizing chord
+  *types* (major, minor, dim, 7ths…) regardless of root. Multiple-choice,
+  type-only answers. Difficulty grows quality-by-quality, then folds in
+  inversions as harder (ear-based) recognition. Built on Trainer.curriculum
+  (map/unlock/stars) + the shared shell/piano/midi/audio/store.
+  Gate: 3-in-a-row per active type clears a lesson.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#07080c" />
+<title>Learn Chord Types</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="../shared/base.css" />
+<style>
+  /* ---- course map (level tiles) — shared look with Learn the Keys ---- */
+  .course-intro { text-align:center; margin: 6px 0 26px; }
+  .course-intro h1 { font-family: var(--font-display); font-size: clamp(28px,6vw,42px); font-weight:700; letter-spacing:-0.03em; margin:0; }
+  .course-intro h1 .accent { background: linear-gradient(120deg,var(--accent),var(--accent-2)); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+  .course-intro p { color: var(--muted); max-width:540px; margin:10px auto 0; font-size:14.5px; line-height:1.6; }
+  .unit { margin-bottom: 30px; }
+  .unit-title { font-family: var(--font-display); font-size:15px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:2px; margin:0 0 14px; }
+  .tiles { display:grid; grid-template-columns:repeat(auto-fill, minmax(148px,1fr)); gap:13px; }
+  .tile {
+    position:relative; text-align:left; cursor:pointer; color:inherit;
+    background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0) 42%), var(--panel);
+    border:1px solid var(--border); border-radius:18px; padding:16px 14px 14px;
+    min-height:140px; display:flex; flex-direction:column; gap:6px;
+    box-shadow:none; backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+    transition: transform .18s var(--ease), border-color .18s, box-shadow .18s;
+  }
+  .tile:hover { transform:translateY(-4px); border-color:var(--border-strong); box-shadow:var(--shadow); }
+  .tile .num { font-family:var(--font-display); font-size:22px; font-weight:700; line-height:1; letter-spacing:-0.02em;
+    background:linear-gradient(180deg,#fff,#c6ccdb); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+  .tile .tico { font-size:30px; line-height:1; margin:2px 0 auto; }
+  .tile .tname { font-size:13px; font-weight:600; line-height:1.3; }
+  .tile .stars { display:flex; gap:5px; margin-top:8px; }
+  .pip { width:10px; height:10px; border-radius:50%; background:var(--panel2); border:1px solid var(--border); }
+  .pip.on { background:linear-gradient(135deg,var(--warn),#ffb347); border-color:transparent; box-shadow:0 0 8px rgba(255,207,91,0.7); }
+  .tile.done { border-color: rgba(61,220,160,0.35); }
+  .tile.locked { opacity:.45; cursor:not-allowed; }
+  .tile.locked:hover { transform:none; box-shadow:none; border-color:var(--border); }
+  .tile .lock { position:absolute; top:14px; right:14px; font-size:15px; opacity:.8; }
+  .tile:disabled { background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0) 42%), var(--panel); }
+
+  /* ---- lesson view ---- */
+  #lesson .backrow { margin-bottom:14px; }
+  .hearts { min-height:26px; font-size:22px; letter-spacing:4px; margin-top:6px; }
+  .hearts .off { opacity:.22; }
+  .result-stars { display:flex; gap:12px; justify-content:center; margin:6px 0 4px; }
+  .result-stars .pip { width:30px; height:30px; }
+  .goal { color:var(--muted); font-size:13px; margin-top:10px; font-family:var(--font-mono); }
+  .primerbody { text-align:left; max-width:540px; margin:0 auto; font-size:15px; line-height:1.7; color:var(--text); }
+  .primerbody b { color:var(--accent); }
+  /* answer chips (type choices) */
+  #answers { display:flex; flex-wrap:wrap; gap:10px; justify-content:center; margin-bottom:20px; }
+  #answers .chip { font-family:var(--font-display); font-size:16px; font-weight:600; padding:12px 20px; border-radius:14px;
+    background:var(--panel); border:1px solid var(--border); color:var(--text); cursor:pointer;
+    transition:transform .18s var(--ease), border-color .18s, background .18s; }
+  #answers .chip:hover:not(:disabled) { transform:translateY(-2px); border-color:var(--border-strong); }
+  #answers .chip.right { background:linear-gradient(135deg,var(--good),#2fb488); color:#04140d; border-color:transparent; }
+  #answers .chip.wrong { background:rgba(255,107,129,.14); border-color:var(--bad); color:var(--bad); opacity:.7; }
+  /* per-skill mastery pips inside the lesson */
+  .masterrow { display:flex; flex-wrap:wrap; gap:12px; justify-content:center; margin:2px 0 14px; font-size:12px; color:var(--muted); font-family:var(--font-mono); }
+  .masterrow .m { display:flex; align-items:center; gap:5px; }
+  .masterrow .m .dots { display:flex; gap:3px; }
+  .masterrow .m .d { width:7px; height:7px; border-radius:50%; background:var(--panel2); border:1px solid var(--border); }
+  .masterrow .m .d.on { background:var(--good); border-color:transparent; }
+  .masterrow .m.done { color:var(--good); }
+</style>
+</head>
+<body>
+<div class="wrap" id="app">
+  <!-- Trainer.shell injects topbar + MIDI help banner here -->
+  <!-- Trainer.curriculum injects the .course-map before #lesson -->
+
+  <div class="course-intro">
+    <h1>Learn <span class="accent">Chord Types</span></h1>
+    <p>Learn to name a chord by its <b>type</b> — major, minor, diminished, and the sevenths — no matter which key it starts on. Clear a lesson by nailing each type three times in a row.</p>
+  </div>
+
+  <div id="lesson" hidden>
+    <div class="backrow"><button id="backBtn" class="secondary">← Map</button></div>
+
+    <div class="hero">
+      <div class="eyebrow" id="eyebrow">Prompt</div>
+      <div id="prompt" class="chord-name"><span class="root">—</span></div>
+      <div id="hearts" class="hearts" hidden></div>
+      <div id="feedback" class="feedback"></div>
+      <div id="goal" class="goal"></div>
+      <div id="timerbar" class="timerbar"></div>
+    </div>
+
+    <div class="masterrow" id="masterrow" hidden></div>
+    <div class="answers" id="answers" hidden></div>
+
+    <div class="controls" id="controls">
+      <button id="hearBtn" class="playbtn" aria-label="Hear it" title="Hear it"><span class="tri">▶</span></button>
+      <button id="skipBtn" class="secondary">Skip ⏭</button>
+    </div>
+
+    <div class="piano-wrap"><div id="piano" class="piano"></div></div>
+
+    <div class="stats-row">
+      <div class="stats">
+        <div class="stat"><div id="sMaster" class="n">0</div><div class="l">Mastered</div></div>
+        <div class="stat"><div id="sScore" class="n">0</div><div class="l">Correct</div></div>
+        <div class="stat"><div id="sGoal" class="n">—</div><div class="l">Goal</div></div>
+        <div class="stat"><div id="sAcc" class="n">—</div><div class="l">Accuracy</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="../shared/theory.js"></script>
+<script src="../shared/audio.js"></script>
+<script src="../shared/piano.js"></script>
+<script src="../shared/midi.js"></script>
+<script src="../shared/store.js"></script>
+<script src="../shared/shell.js"></script>
+<script src="../shared/curriculum.js"></script>
+<script>
+"use strict";
+const T = Trainer.theory, C = Trainer.curriculum;
+const { CHORD_TYPES, NOTE_NAMES, voicing, voicingMidi } = T;
+const store = Trainer.store.open("learn-chord-types");
+
+const ROOTS_ALL = [0,1,2,3,4,5,6,7,8,9,10,11];   // root doesn't affect the answer — pure variety
+
+// ---- course definition ----
+// lesson.q = active chord types; lesson.inv = "root" | "any"
+const COURSE = {
+  title:"Learn Chord Types",
+  units:[
+    { title:"Unit 1 · Triads", lessons:[
+      { id:"t0", type:"intro",  title:"What's a chord?" },
+      { id:"t1", type:"learn",  title:"Major",              q:["maj"],              inv:"root" },
+      { id:"t2", type:"learn",  title:"Major & Minor",      q:["maj","min"],        inv:"root" },
+      { id:"t3", type:"learn",  title:"+ Diminished",       q:["maj","min","dim"],  inv:"root" },
+      { id:"t4", type:"review", title:"Triad Review",       q:["maj","min","dim"],  inv:"root" },
+      { id:"t5", type:"learn",  title:"Inverted Triads",    q:["maj","min","dim"],  inv:"any"  },
+      { id:"t6", type:"play",   title:"Triad Boss",         q:["maj","min","dim"],  inv:"any"  },
+    ]},
+    { title:"Unit 2 · Seventh Chords", lessons:[
+      { id:"s1", type:"learn",  title:"maj7 · min7 · dom7", q:["maj7","min7","dom7"],        inv:"root" },
+      { id:"s2", type:"learn",  title:"+ Diminished 7th",   q:["maj7","min7","dom7","dim7"], inv:"root" },
+      { id:"s3", type:"review", title:"Seventh Review",     q:["maj7","min7","dom7","dim7"], inv:"root" },
+      { id:"s4", type:"learn",  title:"Inverted Sevenths",  q:["maj7","min7","dom7","dim7"], inv:"any"  },
+      { id:"s5", type:"play",   title:"Seventh Boss",       q:["maj7","min7","dom7","dim7"], inv:"any"  },
+    ]},
+    { title:"Unit 3 · Mastery", lessons:[
+      { id:"m1", type:"review", title:"Everything Mixed",   q:["maj","min","dim","maj7","min7","dom7","dim7"], inv:"any" },
+      { id:"m2", type:"play",   title:"Grand Boss",         q:["maj","min","dim","maj7","min7","dom7","dim7"], inv:"any" },
+    ]},
+  ],
+};
+
+// ---- settings ----
+const state = { autoHear:true };
+const settingsSections = [
+  { title:"Audio", html:`
+      <div class="switch-list">
+        <label class="switch"><input type="checkbox" id="autoHear" checked /><span class="track"></span><span class="txt">Auto-play each chord when it appears</span></label>
+      </div>
+      <p class="goal" style="margin-top:8px">The keys light up too — you can learn by sight, by ear, or both.</p>` },
+  { title:"Progress", html:`<button id="resetBtn" class="linkbtn">Reset all course progress</button>` },
+];
+
+const shell = Trainer.shell.mount({
+  mountEl: document.getElementById("app"),
+  title:"Learn Chord Types", subtitle:"a guided course",
+  settingsSections,
+});
+
+// ---- piano + midi (display / ear only — answers come from the chips) ----
+const piano = Trainer.piano.create(document.getElementById("piano"), { labels:true });
+Trainer.midi.init({
+  onNoteOn:n=>piano.noteOn(n), onNoteOff:n=>piano.noteOff(n),
+  selectEl: shell.midiSelectEl, statusEl: shell.statusEl, helpEl: shell.helpEl,
+});
+Trainer.audio.loadInstrument("piano");
+
+// ---- DOM refs ----
+const $ = id => document.getElementById(id);
+const eyebrowEl=$("eyebrow"), promptEl=$("prompt"), heartsEl=$("hearts"),
+      fbEl=$("feedback"), goalEl=$("goal"), barEl=$("timerbar"),
+      answersEl=$("answers"), masterrowEl=$("masterrow"), controlsEl=$("controls"),
+      sMaster=$("sMaster"), sScore=$("sScore"), sGoal=$("sGoal"), sAcc=$("sAcc");
+
+// ---- course controller ----
+const course = C.mount({ mountEl: document.getElementById("app"), course: COURSE, store, onPlay: startLesson });
+$("backBtn").onclick = endToMap;
+
+// =====================================================================
+//  LESSON RUNNER
+// =====================================================================
+let sess = null, rafId = null;
+const CFG = {
+  masterN: 3,           // consecutive correct per type to master it
+  playTarget: 12,       // correct hits to beat a boss
+  hearts: 3,
+  ninjaStartMs: 4600, ninjaMinMs: 2200, ninjaStepMs: 180,
+};
+
+function startLesson(lesson){
+  stopTimer();
+  course.showLesson();
+  answersEl.hidden = true; controlsEl.hidden = false; heartsEl.hidden = true;
+  masterrowEl.hidden = true; barEl.style.opacity = 0;
+  fbEl.className = "feedback"; fbEl.textContent = "";
+  restoreControls();
+
+  if (lesson.type === "intro") return showPrimer(lesson);
+
+  const isPlay = lesson.type === "play";
+  sess = {
+    lesson, types: lesson.q.slice(), inv: lesson.inv, isPlay,
+    mastery: Object.fromEntries(lesson.q.map(t=>[t,0])),   // consecutive-correct per type
+    correct:0, attempts:0, answered:false,
+    hearts: CFG.hearts, target: CFG.playTarget, ninjaMs: CFG.ninjaStartMs,
+    prompt:null, over:false,
+  };
+  if (isPlay){
+    heartsEl.hidden = false; drawHearts();
+    goalEl.textContent = `Name ${CFG.playTarget} chords before the timer runs out your ❤`;
+  } else {
+    masterrowEl.hidden = false;
+    goalEl.textContent = `Nail each type ${CFG.masterN}× in a row to clear this lesson`;
+  }
+  updateStats(); renderMasterRow();
+  nextPrompt();
+}
+
+function showPrimer(lesson){
+  sess = null;
+  eyebrowEl.textContent = "Getting started";
+  promptEl.innerHTML = `<span class="root" style="font-size:.5em">What's a chord?</span>`;
+  heartsEl.hidden = true; goalEl.textContent = ""; masterrowEl.hidden = true;
+  fbEl.className = "feedback";
+  fbEl.innerHTML = `<div class="primerbody">
+      A <b>chord</b> is three or more notes played together. Each chord has a <b>type</b>
+      — its flavor — set by the spacing between the notes.<br><br>
+      In this course you'll learn to name the <b>type</b>: <b>major</b> (bright),
+      <b>minor</b> (darker), <b>diminished</b> (tense), and the richer <b>seventh</b> chords.<br><br>
+      The <b>root</b> (which key it starts on) doesn't matter here — a major chord is
+      "major" whether it's built on C or F♯. Trust the sound and the shape.<br><br>
+      Tap <b>Start</b> and we'll take it one type at a time.
+    </div>`;
+  answersEl.hidden = true;
+  controlsEl.innerHTML = `<button id="startBtn">Start →</button>`;
+  $("startBtn").onclick = ()=>{ course.record(lesson.id, {stars:1}); restoreControls(); endToMap(); };
+  piano.clearHighlight();
+}
+
+function restoreControls(){
+  controlsEl.innerHTML = `<button id="hearBtn" class="playbtn" aria-label="Hear it" title="Hear it"><span class="tri">▶</span></button>
+      <button id="skipBtn" class="secondary">Skip ⏭</button>`;
+  $("hearBtn").onclick = hearCurrent;
+  $("skipBtn").onclick = ()=>{ if (sess && !sess.over) resolve(false, true); };
+}
+restoreControls();
+
+// pick the next chord: a type that isn't mastered yet (learn/review) or any (boss)
+function pickType(){
+  const pool = sess.isPlay
+    ? sess.types
+    : sess.types.filter(t => sess.mastery[t] < CFG.masterN);
+  if (!pool.length) return null;
+  // weight toward the least-mastered
+  const weights = pool.map(t => sess.isPlay ? 1 : (CFG.masterN - sess.mastery[t]));
+  let sum = weights.reduce((a,b)=>a+b,0), r = Math.random()*sum, chosen = pool[0];
+  for (let i=0;i<pool.length;i++){ r -= weights[i]; if (r<=0){ chosen = pool[i]; break; } }
+  return chosen;
+}
+
+function nextPrompt(){
+  if (!sess || sess.over) return;
+  const typeKey = pickType();
+  if (typeKey == null){ sess.over = true; return finish(); }   // learn/review complete
+
+  const rootPc = ROOTS_ALL[Math.floor(Math.random()*ROOTS_ALL.length)];
+  const n = CHORD_TYPES[typeKey].intervals.length;
+  const inv = sess.inv === "any" ? Math.floor(Math.random()*n) : 0;
+  sess.prompt = { typeKey, rootPc, inv,
+    pcs: voicing(rootPc, typeKey, inv),
+    midis: voicingMidi(rootPc, typeKey, inv, 57) };  // anchor a bit lower so inversions fit
+  sess.answered = false;
+
+  fbEl.className = "feedback"; fbEl.textContent = "";
+  eyebrowEl.textContent = sess.lesson.title;
+  promptEl.classList.remove("pop"); void promptEl.offsetWidth; promptEl.classList.add("pop");
+  promptEl.innerHTML = `<span class="qual" style="font-size:.6em">🎹 What type of chord?</span>`;
+  piano.clear(); piano.highlight(sess.prompt.pcs);
+  renderAnswers();
+  if (state.autoHear) setTimeout(hearCurrent, 260);
+  if (sess.isPlay) startTimer();
+}
+
+function renderAnswers(){
+  answersEl.hidden = false;
+  answersEl.innerHTML = sess.types.map(t =>
+    `<button class="chip" data-t="${t}">${CHORD_TYPES[t].label}</button>`).join("");
+  answersEl.querySelectorAll(".chip").forEach(ch=>{
+    ch.onclick = ()=>{
+      if (!sess || sess.answered || sess.over) return;
+      const t = ch.dataset.t;
+      const ok = t === sess.prompt.typeKey;
+      if (!ok){ ch.classList.add("wrong"); ch.disabled = true; }
+      resolve(ok, false, ch);
+    };
+  });
+}
+
+function hearCurrent(){ if (sess && sess.prompt) Trainer.audio.hearNotes(sess.prompt.midis); }
+
+function resolve(ok, skip, chip){
+  if (!sess || sess.over || sess.answered) return;
+  sess.answered = true;
+  stopTimer();
+  sess.attempts++; store.total++;
+  const p = sess.prompt;
+
+  if (ok){
+    sess.correct++; store.correct++;
+    if (!sess.isPlay){ sess.mastery[p.typeKey] = Math.min(CFG.masterN, sess.mastery[p.typeKey] + 1); }
+    if (chip) chip.classList.add("right");
+    setFb(true, sess.isPlay ? "🥷 "+sess.correct : "✅ "+CHORD_TYPES[p.typeKey].label);
+    sess.ninjaMs = Math.max(CFG.ninjaMinMs, sess.ninjaMs - CFG.ninjaStepMs);
+  } else {
+    store.bumpMiss("type:"+p.typeKey);
+    if (!sess.isPlay) sess.mastery[p.typeKey] = 0;   // reset that skill's streak
+    if (sess.isPlay){ sess.hearts--; drawHearts(); }
+    setFb(false, skip ? "⏭ "+CHORD_TYPES[p.typeKey].label : "❌ that was "+CHORD_TYPES[p.typeKey].label);
+    // reveal the right answer chip
+    answersEl.querySelectorAll(".chip").forEach(c=>{ if (c.dataset.t===p.typeKey) c.classList.add("right"); });
+  }
+  store.save(); updateStats(); renderMasterRow();
+
+  const delay = ok ? 620 : 950;
+  const done = sess.isPlay
+    ? (sess.hearts <= 0 || sess.correct >= sess.target)
+    : sess.types.every(t => sess.mastery[t] >= CFG.masterN);
+  if (done){ sess.over = true; setTimeout(finish, delay); }
+  else setTimeout(nextPrompt, delay);
+}
+
+function finish(){
+  stopTimer(); piano.clearHighlight(); answersEl.hidden = true; heartsEl.hidden = true;
+  const acc = sess.attempts ? sess.correct/sess.attempts : 0;
+  let stars, won;
+  if (sess.isPlay){
+    won = sess.correct >= sess.target;
+    if (won) stars = 3 + (sess.hearts>=CFG.hearts ? 2 : sess.hearts>=CFG.hearts-1 ? 1 : 0);
+    else { const pr = sess.correct/sess.target; stars = pr>=0.66?2 : pr>=0.33?1 : 0; }
+  } else {
+    // cleared by mastery → at least 3 stars, bonus for cleanliness
+    won = true;
+    stars = acc>=0.95 ? 5 : acc>=0.85 ? 4 : 3;
+  }
+  course.record(sess.lesson.id, {stars, acc:Math.round(acc*100)});
+  showResult(stars, won, acc);
+}
+
+function showResult(stars, won, acc){
+  const lesson = sess.lesson;
+  masterrowEl.hidden = true; barEl.style.opacity = 0;
+  eyebrowEl.textContent = won ? "Lesson complete" : "So close";
+  promptEl.innerHTML = `<span class="root" style="font-size:.5em">${won ? (stars>=4?"Brilliant!":"Cleared!") : "Try again"}</span>`;
+  fbEl.className = "feedback " + (won ? "good" : "bad");
+  fbEl.innerHTML = `<div class="result-stars">${C.starPips(stars)}</div>`;
+  goalEl.textContent = `${Math.round(acc*100)}% accuracy · ${stars} / 5 stars`;
+  controlsEl.innerHTML = `<button id="retryBtn" class="secondary">Retry</button>
+      <button id="mapBtn">${won ? "Back to map →" : "Back to map"}</button>`;
+  $("retryBtn").onclick = ()=>{ restoreControls(); startLesson(lesson); };
+  $("mapBtn").onclick = ()=>{ restoreControls(); endToMap(); };
+  sess = null;
+}
+
+function endToMap(){ stopTimer(); sess = null; piano.clearHighlight(); restoreControls(); course.showMap(); }
+
+// ---- feedback / stats / hearts / mastery row ----
+function setFb(good, msg){ fbEl.className = "feedback " + (good?"good":"bad"); fbEl.textContent = msg; }
+function drawHearts(){ let h=""; for (let i=0;i<CFG.hearts;i++) h += `<span class="${i<sess.hearts?"":"off"}">❤</span>`; heartsEl.innerHTML = h; }
+function updateStats(){
+  if (!sess) return;
+  const mastered = sess.isPlay ? sess.correct : sess.types.filter(t=>sess.mastery[t]>=CFG.masterN).length;
+  sMaster.textContent = sess.isPlay ? sess.correct : `${mastered}/${sess.types.length}`;
+  sScore.textContent = ""+sess.correct;
+  sGoal.textContent = sess.isPlay ? sess.target + " ❤"+sess.hearts : CFG.masterN+"× each";
+  sAcc.textContent = sess.attempts ? Math.round(100*sess.correct/sess.attempts)+"%" : "—";
+}
+function renderMasterRow(){
+  if (!sess || sess.isPlay){ masterrowEl.hidden = true; return; }
+  masterrowEl.hidden = false;
+  masterrowEl.innerHTML = sess.types.map(t=>{
+    const v = sess.mastery[t], done = v>=CFG.masterN;
+    let dots=""; for (let i=0;i<CFG.masterN;i++) dots += `<span class="d${i<v?" on":""}"></span>`;
+    return `<span class="m${done?" done":""}">${CHORD_TYPES[t].label}${done?" ✓":""}<span class="dots">${dots}</span></span>`;
+  }).join("");
+}
+
+// ---- boss timer (per-prompt countdown, reuses .timerbar) ----
+function perfNow(){ return (window.performance && performance.now) ? performance.now() : new Date().getTime(); }
+function startTimer(){
+  stopTimer();
+  const dur = sess.ninjaMs, start = perfNow();
+  barEl.style.opacity = 1;
+  (function tick(){
+    if (!sess || sess.over || sess.answered) return;
+    const left = 1 - (perfNow()-start)/dur;
+    if (left <= 0){ barEl.style.transform = "scaleX(0)"; resolve(false); return; }
+    barEl.style.transform = "scaleX("+left+")";
+    rafId = requestAnimationFrame(tick);
+  })();
+}
+function stopTimer(){ if (rafId){ cancelAnimationFrame(rafId); rafId = null; } barEl.style.transform = "scaleX(1)"; }
+
+// ---- settings wiring ----
+$("autoHear").onchange = e=> state.autoHear = e.target.checked;
+$("resetBtn").onclick = ()=>{ course.resetProgress(); shell.closeSettings(); };
+</script>
+</body>
+</html>

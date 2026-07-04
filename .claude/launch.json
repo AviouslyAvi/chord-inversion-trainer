@@ -6,6 +6,12 @@
       "runtimeExecutable": "python3",
       "runtimeArgs": ["-m", "http.server", "8872"],
       "port": 8872
+    },
+    {
+      "name": "suite-verify",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8899"],
+      "port": 8899
     }
   ]
 }

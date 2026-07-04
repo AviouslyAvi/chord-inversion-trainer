@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<!--
+  LEARN CHORD INVERSIONS — a guided, TypingClub-style *play* course. You're given
+  a named chord in a required inversion and must PRODUCE the exact voicing on the
+  keys (bottom→top), like the free-play chord-inversion trainer — but here the
+  difficulty ramps: naturals-first roots, quality-by-quality, root → 1st → 2nd →
+  3rd inversion, then all 12 keys. Built on Trainer.curriculum (map/unlock/stars)
+  + the shared shell/piano/midi/audio/store.
+  Gate: 3-in-a-row per (quality × inversion) skill, pooled across active roots.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#07080c" />
+<title>Learn Chord Inversions</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="../shared/base.css" />
+<style>
+  /* ---- course map (level tiles) — shared look with the other guided courses ---- */
+  .course-intro { text-align:center; margin: 6px 0 26px; }
+  .course-intro h1 { font-family: var(--font-display); font-size: clamp(28px,6vw,42px); font-weight:700; letter-spacing:-0.03em; margin:0; }
+  .course-intro h1 .accent { background: linear-gradient(120deg,var(--accent),var(--accent-2)); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+  .course-intro p { color: var(--muted); max-width:540px; margin:10px auto 0; font-size:14.5px; line-height:1.6; }
+  .unit { margin-bottom: 30px; }
+  .unit-title { font-family: var(--font-display); font-size:15px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:2px; margin:0 0 14px; }
+  .tiles { display:grid; grid-template-columns:repeat(auto-fill, minmax(148px,1fr)); gap:13px; }
+  .tile {
+    position:relative; text-align:left; cursor:pointer; color:inherit;
+    background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0) 42%), var(--panel);
+    border:1px solid var(--border); border-radius:18px; padding:16px 14px 14px;
+    min-height:140px; display:flex; flex-direction:column; gap:6px;
+    box-shadow:none; backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+    transition: transform .18s var(--ease), border-color .18s, box-shadow .18s;
+  }
+  .tile:hover { transform:translateY(-4px); border-color:var(--border-strong); box-shadow:var(--shadow); }
+  .tile .num { font-family:var(--font-display); font-size:22px; font-weight:700; line-height:1; letter-spacing:-0.02em;
+    background:linear-gradient(180deg,#fff,#c6ccdb); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+  .tile .tico { font-size:30px; line-height:1; margin:2px 0 auto; }
+  .tile .tname { font-size:13px; font-weight:600; line-height:1.3; }
+  .tile .stars { display:flex; gap:5px; margin-top:8px; }
+  .pip { width:10px; height:10px; border-radius:50%; background:var(--panel2); border:1px solid var(--border); }
+  .pip.on { background:linear-gradient(135deg,var(--warn),#ffb347); border-color:transparent; box-shadow:0 0 8px rgba(255,207,91,0.7); }
+  .tile.done { border-color: rgba(61,220,160,0.35); }
+  .tile.locked { opacity:.45; cursor:not-allowed; }
+  .tile.locked:hover { transform:none; box-shadow:none; border-color:var(--border); }
+  .tile .lock { position:absolute; top:14px; right:14px; font-size:15px; opacity:.8; }
+  .tile:disabled { background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0) 42%), var(--panel); }
+
+  /* ---- lesson view ---- */
+  #lesson .backrow { margin-bottom:14px; }
+  .result-stars { display:flex; gap:12px; justify-content:center; margin:6px 0 4px; }
+  .result-stars .pip { width:30px; height:30px; }
+  .goal { color:var(--muted); font-size:13px; margin-top:10px; font-family:var(--font-mono); }
+  .primerbody { text-align:left; max-width:540px; margin:0 auto; font-size:15px; line-height:1.7; color:var(--text); }
+  .primerbody b { color:var(--accent); }
+  /* per-skill mastery pips inside the lesson */
+  .masterrow { display:flex; flex-wrap:wrap; gap:10px 14px; justify-content:center; margin:2px 0 14px; font-size:12px; color:var(--muted); font-family:var(--font-mono); }
+  .masterrow .m { display:flex; align-items:center; gap:5px; }
+  .masterrow .m .dots { display:flex; gap:3px; }
+  .masterrow .m .d { width:7px; height:7px; border-radius:50%; background:var(--panel2); border:1px solid var(--border); }
+  .masterrow .m .d.on { background:var(--good); border-color:transparent; }
+  .masterrow .m.done { color:var(--good); }
+</style>
+</head>
+<body>
+<div class="wrap" id="app">
+  <!-- Trainer.shell injects topbar + MIDI help banner here -->
+  <!-- Trainer.curriculum injects the .course-map before #lesson -->
+
+  <div class="course-intro">
+    <h1>Learn <span class="accent">Chord Inversions</span></h1>
+    <p>Play the named chord in the inversion you're asked for — the exact voicing, bottom to top. Start on the white keys, add inversions one rung at a time, then take it to all twelve keys.</p>
+  </div>
+
+  <div id="lesson" hidden>
+    <div class="backrow"><button id="backBtn" class="secondary">← Map</button></div>
+
+    <div class="hero">
+      <div class="eyebrow" id="eyebrow">Play this chord</div>
+      <div id="prompt" class="chord-name"><span class="root">—</span></div>
+      <div id="invBadge" class="inv-badge">Root position</div>
+      <div id="bassline" class="bassline"></div>
+      <div id="promptNotes" class="prompt-notes"></div>
+      <div id="tries" class="tries"></div>
+      <div id="feedback" class="feedback"></div>
+      <div id="liveRead" class="liveread"></div>
+      <div id="goal" class="goal"></div>
+    </div>
+
+    <div class="masterrow" id="masterrow" hidden></div>
+
+    <div class="controls" id="controls">
+      <button id="hearBtn" class="playbtn" aria-label="Hear it" title="Hear it"><span class="tri">▶</span></button>
+      <button id="skipBtn" class="secondary">Skip ⏭</button>
+      <button id="revealBtn" class="secondary">Reveal notes</button>
+    </div>
+
+    <div class="piano-wrap"><div id="piano" class="piano"></div></div>
+
+    <div class="stats-row">
+      <div class="stats">
+        <div class="stat"><div id="sMaster" class="n">0</div><div class="l">Mastered</div></div>
+        <div class="stat"><div id="sScore" class="n">0</div><div class="l">Correct</div></div>
+        <div class="stat"><div id="sGoal" class="n">—</div><div class="l">Goal</div></div>
+        <div class="stat"><div id="sAcc" class="n">—</div><div class="l">Accuracy</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="../shared/theory.js"></script>
+<script src="../shared/audio.js"></script>
+<script src="../shared/piano.js"></script>
+<script src="../shared/midi.js"></script>
+<script src="../shared/store.js"></script>
+<script src="../shared/shell.js"></script>
+<script src="../shared/curriculum.js"></script>
+<script>
+"use strict";
+const T = Trainer.theory, C = Trainer.curriculum;
+const { CHORD_TYPES, INV_NAMES, NOTE_NAMES, voicing, voicingMidi } = T;
+const store = Trainer.store.open("learn-inversions");
+
+const NATURALS = [0,2,4,5,7,9,11];               // white-key roots
+const ROOTS_ALL = [0,1,2,3,4,5,6,7,8,9,10,11];
+const INV_SHORT = ["root","1st","2nd","3rd"];
+const REVEAL_AFTER = 3;                            // wrong tries on a prompt before notes reveal
+const BASE = 57;                                   // voicing anchor (A3) — inversions sit mid-keyboard
+
+// ---- course definition ----
+// lesson.q = active qualities, lesson.inv = active inversion indices, lesson.roots = "naturals" | "all"
+const COURSE = {
+  title:"Learn Chord Inversions",
+  units:[
+    { title:"Unit 1 · Triads (white keys)", lessons:[
+      { id:"i0",  type:"intro",  title:"What's an inversion?" },
+      { id:"i1",  type:"learn",  title:"Major (root)",        q:["maj"],             inv:[0],       roots:"naturals" },
+      { id:"i2",  type:"learn",  title:"+ Minor (root)",      q:["maj","min"],       inv:[0],       roots:"naturals" },
+      { id:"i3",  type:"learn",  title:"+ Diminished (root)", q:["maj","min","dim"], inv:[0],       roots:"naturals" },
+      { id:"i4",  type:"learn",  title:"+ 1st inversion",     q:["maj","min","dim"], inv:[0,1],     roots:"naturals" },
+      { id:"i5",  type:"learn",  title:"+ 2nd inversion",     q:["maj","min","dim"], inv:[0,1,2],   roots:"naturals" },
+    ]},
+    { title:"Unit 2 · Triads (all keys)", lessons:[
+      { id:"i6",  type:"review", title:"Transpose Triads",    q:["maj","min","dim"], inv:[0,1,2],   roots:"all" },
+    ]},
+    { title:"Unit 3 · Sevenths (white keys)", lessons:[
+      { id:"i7",  type:"learn",  title:"Sevenths (root)",     q:["maj7","min7","dom7"],        inv:[0],       roots:"naturals" },
+      { id:"i8",  type:"learn",  title:"+ 1st inversion",     q:["maj7","min7","dom7"],        inv:[0,1],     roots:"naturals" },
+      { id:"i9",  type:"learn",  title:"+ 2nd inversion",     q:["maj7","min7","dom7"],        inv:[0,1,2],   roots:"naturals" },
+      { id:"i10", type:"learn",  title:"+ 3rd (+dim7)",       q:["maj7","min7","dom7","dim7"], inv:[0,1,2,3], roots:"naturals" },
+    ]},
+    { title:"Unit 4 · Sevenths (all keys)", lessons:[
+      { id:"i11", type:"play",   title:"Full Mastery 🎉",     q:["maj7","min7","dom7","dim7"], inv:[0,1,2,3], roots:"all" },
+    ]},
+  ],
+};
+
+// ---- settings ----
+const state = { autoHear:true, openVoicing:false, labels:true, sound:true };
+const settingsSections = [
+  { title:"How you play", html:`
+      <div class="switch-list">
+        <label class="switch"><input type="checkbox" id="openVoicing" /><span class="track"></span><span class="txt">Accept open voicings — any octave spread, as long as the bass note & chord tones are right</span></label>
+        <label class="switch"><input type="checkbox" id="autoHear" checked /><span class="track"></span><span class="txt">Auto-play the target chord when it appears</span></label>
+      </div>
+      <p class="goal" style="margin-top:8px">By default you play the exact voicing bottom-to-top. Open voicings only fix the bass note.</p>` },
+  { title:"Display & sound", html:`
+      <div class="switch-list">
+        <label class="switch"><input type="checkbox" id="labels" checked /><span class="track"></span><span class="txt">Note labels on the keys</span></label>
+        <label class="switch"><input type="checkbox" id="sound" checked /><span class="track"></span><span class="txt">Sound when I play</span></label>
+      </div>` },
+  { title:"Progress", html:`<button id="resetBtn" class="linkbtn">Reset all course progress</button>` },
+];
+
+const shell = Trainer.shell.mount({
+  mountEl: document.getElementById("app"),
+  title:"Learn Chord Inversions", subtitle:"a guided course",
+  settingsSections,
+});
+
+// ---- piano + midi (you produce the answer on the keys) ----
+const piano = Trainer.piano.create(document.getElementById("piano"), {
+  labels: state.labels, sound: state.sound,
+  onNoteOn(){ identify(); evaluate(); },
+  onNoteOff(){ if (sess && !sess.answered){ sess.lastAttemptSig = null; identify(); } },
+});
+Trainer.midi.init({
+  onNoteOn:n=>piano.noteOn(n), onNoteOff:n=>piano.noteOff(n),
+  selectEl: shell.midiSelectEl, statusEl: shell.statusEl, helpEl: shell.helpEl,
+});
+Trainer.audio.loadInstrument("piano");
+
+// ---- DOM refs ----
+const $ = id => document.getElementById(id);
+const eyebrowEl=$("eyebrow"), promptEl=$("prompt"), invBadgeEl=$("invBadge"),
+      basslineEl=$("bassline"), notesEl=$("promptNotes"), triesEl=$("tries"),
+      fbEl=$("feedback"), liveEl=$("liveRead"), goalEl=$("goal"),
+      masterrowEl=$("masterrow"), controlsEl=$("controls"),
+      sMaster=$("sMaster"), sScore=$("sScore"), sGoal=$("sGoal"), sAcc=$("sAcc");
+
+// ---- course controller ----
+const course = C.mount({ mountEl: document.getElementById("app"), course: COURSE, store, onPlay: startLesson });
+$("backBtn").onclick = endToMap;
+
+// =====================================================================
+//  LESSON RUNNER
+// =====================================================================
+let sess = null;
+const CFG = { masterN: 3 };   // consecutive clean hits per (quality × inversion) skill
+
+// every valid quality×inversion combo for this lesson becomes a "skill"
+function skillsFor(lesson){
+  const out = [];
+  lesson.q.forEach(q => {
+    const n = CHORD_TYPES[q].intervals.length;
+    lesson.inv.forEach(inv => { if (inv < n) out.push({ q, inv, key: q+":"+inv }); });
+  });
+  return out;
+}
+
+function startLesson(lesson){
+  course.showLesson();
+  controlsEl.hidden = false; masterrowEl.hidden = true;
+  fbEl.className = "feedback"; fbEl.textContent = ""; liveEl.textContent = ""; liveEl.className = "liveread";
+  notesEl.className = "prompt-notes"; notesEl.textContent = ""; triesEl.textContent = "";
+  restoreControls();
+
+  if (lesson.type === "intro") return showPrimer(lesson);
+
+  const skills = skillsFor(lesson);
+  sess = {
+    lesson, skills,
+    roots: lesson.roots === "all" ? ROOTS_ALL : NATURALS,
+    mastery: Object.fromEntries(skills.map(s=>[s.key,0])),
+    correct:0, attempts:0, answered:false, wrongTries:0, lastAttemptSig:null,
+    prompt:null, lastPrompt:null, over:false,
+  };
+  masterrowEl.hidden = false;
+  goalEl.textContent = `Nail each chord type & inversion ${CFG.masterN}× in a row to clear this lesson`;
+  updateStats(); renderMasterRow();
+  nextPrompt();
+}
+
+function showPrimer(lesson){
+  sess = null;
+  eyebrowEl.textContent = "Getting started";
+  promptEl.innerHTML = `<span class="root" style="font-size:.5em">What's an inversion?</span>`;
+  invBadgeEl.textContent = ""; basslineEl.innerHTML = ""; goalEl.textContent = ""; masterrowEl.hidden = true;
+  fbEl.className = "feedback";
+  fbEl.innerHTML = `<div class="primerbody">
+      A chord's notes can be stacked in different orders. Which note sits at the
+      <b>bottom</b> decides the <b>inversion</b>.<br><br>
+      <b>Root position</b> — the root is lowest (C–E–G).<br>
+      <b>1st inversion</b> — the 3rd is lowest (E–G–C).<br>
+      <b>2nd inversion</b> — the 5th is lowest (G–C–E).<br>
+      <b>3rd inversion</b> — the 7th is lowest (only on four-note 7th chords).<br><br>
+      It's the same chord either way — like reading the same word with the letters
+      rotated. Your job: play the chord you're given with the <b>right note on the
+      bottom</b>, from lowest to highest.<br><br>
+      We'll start on the white keys with plain root-position triads, then climb the
+      ladder. Tap <b>Start</b>.
+    </div>`;
+  controlsEl.innerHTML = `<button id="startBtn">Start →</button>`;
+  $("startBtn").onclick = ()=>{ course.record(lesson.id, {stars:1}); restoreControls(); endToMap(); };
+  piano.clearHighlight();
+}
+
+function restoreControls(){
+  controlsEl.innerHTML = `<button id="hearBtn" class="playbtn" aria-label="Hear it" title="Hear it"><span class="tri">▶</span></button>
+      <button id="skipBtn" class="secondary">Skip ⏭</button>
+      <button id="revealBtn" class="secondary">Reveal notes</button>`;
+  $("hearBtn").onclick = hearCurrent;
+  $("skipBtn").onclick = ()=>{ if (sess && !sess.over && !sess.answered) resolve(false, true); };
+  $("revealBtn").onclick = ()=>{ if (sess && sess.prompt) reveal(); };
+}
+restoreControls();
+
+// pick the next skill (least-mastered weighted) + a root from the active pool
+function pickSkill(){
+  const pool = sess.skills.filter(s => sess.mastery[s.key] < CFG.masterN);
+  if (!pool.length) return null;
+  const weights = pool.map(s => CFG.masterN - sess.mastery[s.key]);
+  let sum = weights.reduce((a,b)=>a+b,0), r = Math.random()*sum, chosen = pool[0];
+  for (let i=0;i<pool.length;i++){ r -= weights[i]; if (r<=0){ chosen = pool[i]; break; } }
+  return chosen;
+}
+
+function nextPrompt(){
+  if (!sess || sess.over) return;
+  let skill, rootPc, sig;
+  for (let guard=0; guard<24; guard++){
+    skill = pickSkill();
+    if (!skill){ sess.over = true; return finish(); }   // every skill mastered
+    rootPc = sess.roots[Math.floor(Math.random()*sess.roots.length)];
+    sig = skill.key+"@"+rootPc;
+    if (sig !== sess.lastPrompt || sess.roots.length*sess.skills.length <= 1) break;
+  }
+  sess.lastPrompt = sig;
+  sess.prompt = {
+    rootPc, typeKey: skill.q, inv: skill.inv, skillKey: skill.key,
+    targetPcs: voicing(rootPc, skill.q, skill.inv),
+    midis: voicingMidi(rootPc, skill.q, skill.inv, BASE),
+  };
+  sess.answered = false; sess.wrongTries = 0; sess.lastAttemptSig = null;
+  piano.clear(); piano.clearHighlight();
+
+  const c = sess.prompt;
+  eyebrowEl.textContent = sess.lesson.title;
+  promptEl.classList.remove("pop"); void promptEl.offsetWidth; promptEl.classList.add("pop");
+  promptEl.innerHTML = `<span class="root">${NOTE_NAMES[c.rootPc]}</span> <span class="qual">${CHORD_TYPES[c.typeKey].label}</span>`;
+  invBadgeEl.textContent = INV_NAMES[c.inv];
+  basslineEl.innerHTML = state.openVoicing
+    ? `Bass note must be <b>${NOTE_NAMES[c.targetPcs[0]]}</b> — spread the other notes anywhere`
+    : `Play bottom → top · lowest note (bass): <b>${NOTE_NAMES[c.targetPcs[0]]}</b>`;
+  notesEl.className = "prompt-notes"; notesEl.textContent = "";
+  triesEl.textContent = ""; fbEl.className = "feedback"; fbEl.textContent = "";
+  liveEl.textContent = ""; liveEl.className = "liveread";
+
+  if (state.autoHear) setTimeout(hearCurrent, 300);
+}
+
+function hearCurrent(){ if (sess && sess.prompt) Trainer.audio.hearNotes(sess.prompt.midis); }
+function chordLabel(c){ return `${NOTE_NAMES[c.rootPc]} ${CHORD_TYPES[c.typeKey].label} · ${INV_NAMES[c.inv]}`; }
+
+// ---- evaluate a played attempt against the target voicing (reused from the free-play trainer) ----
+function evaluate(){
+  if (!sess || sess.over || sess.answered) return;
+  const c = sess.prompt; if (!c) return;
+  const notes = [...piano.held.keys()].sort((a,b)=>a-b);
+  if (!notes.length) return;
+  const playedPcs = notes.map(n=>n%12);
+  const bassPc = playedPcs[0];
+  const uniquePcs = [...new Set(playedPcs)];
+  const targetSet = new Set(c.targetPcs);
+
+  let ok, sig;
+  if (state.openVoicing){
+    if (uniquePcs.length !== c.targetPcs.length) return;      // still building
+    sig = bassPc + "|" + [...uniquePcs].sort((a,b)=>a-b).join(",");
+    if (sig === sess.lastAttemptSig) return;
+    const rightTones = c.targetPcs.every(p=>uniquePcs.includes(p)) && uniquePcs.every(p=>targetSet.has(p));
+    ok = rightTones && bassPc === c.targetPcs[0];
+  } else {
+    if (notes.length !== c.targetPcs.length) return;          // still building
+    sig = playedPcs.join(",");
+    if (sig === sess.lastAttemptSig) return;
+    ok = playedPcs.every((p,i)=> p === c.targetPcs[i]);
+  }
+  sess.lastAttemptSig = sig;
+  resolve(ok, false, playedPcs);
+}
+
+// resolve one attempt. skip=true → user skipped. On a miss you stay on the same
+// chord and can try again; the miss already reset that skill's streak.
+function resolve(ok, skip, playedPcs){
+  if (!sess || sess.over || sess.answered) return;
+  const c = sess.prompt, sk = c.skillKey;
+  sess.attempts++; store.total++;
+
+  if (ok){
+    sess.answered = true;
+    sess.correct++; store.correct++;
+    sess.mastery[sk] = Math.min(CFG.masterN, sess.mastery[sk] + 1);
+    setFb(true, "✅ "+chordLabel(c));
+    liveEl.textContent = ""; liveEl.className = "liveread";
+    piano.highlight(c.targetPcs);
+    store.save(); updateStats(); renderMasterRow();
+
+    const done = sess.skills.every(s => sess.mastery[s.key] >= CFG.masterN);
+    if (done){ sess.over = true; setTimeout(finish, 780); }
+    else setTimeout(nextPrompt, 780);
+  } else {
+    store.bumpMiss("skill:"+sk);
+    sess.mastery[sk] = 0;                 // any miss resets this skill's streak
+    sess.wrongTries++;
+    setFb(false, skip
+      ? "⏭ that was "+chordLabel(c)
+      : "❌ "+(playedPcs ? playedPcs.map(p=>NOTE_NAMES[p]).join(" – ")+" — try again" : "not quite — try again"));
+    store.save(); updateStats(); renderMasterRow();
+
+    if (skip){                            // skip moves on to a fresh prompt
+      sess.answered = true;
+      reveal();
+      setTimeout(nextPrompt, 1100);
+      return;
+    }
+    const left = REVEAL_AFTER - sess.wrongTries;
+    triesEl.textContent = left > 0 ? `${sess.wrongTries} wrong · notes reveal after ${REVEAL_AFTER}` : "";
+    if (sess.wrongTries >= REVEAL_AFTER) reveal();
+  }
+}
+
+function reveal(){
+  const c = sess && sess.prompt; if (!c) return;
+  notesEl.className = "prompt-notes reveal";
+  notesEl.textContent = c.targetPcs.map(p=>NOTE_NAMES[p]).join(" – ") + "  (bottom → top)";
+  piano.highlight(c.targetPcs);
+}
+
+function finish(){
+  piano.clearHighlight(); masterrowEl.hidden = true;
+  const acc = sess.attempts ? sess.correct/sess.attempts : 0;
+  const stars = acc>=0.9 ? 5 : acc>=0.75 ? 4 : 3;   // cleared by mastery → at least 3
+  course.record(sess.lesson.id, {stars, acc:Math.round(acc*100)});
+  showResult(stars, acc);
+}
+
+function showResult(stars, acc){
+  const lesson = sess.lesson;
+  eyebrowEl.textContent = "Lesson complete";
+  promptEl.innerHTML = `<span class="root" style="font-size:.5em">${stars>=4?"Brilliant!":"Cleared!"}</span>`;
+  invBadgeEl.textContent = ""; basslineEl.innerHTML = ""; notesEl.textContent = ""; triesEl.textContent = "";
+  liveEl.textContent = "";
+  fbEl.className = "feedback good";
+  fbEl.innerHTML = `<div class="result-stars">${C.starPips(stars)}</div>`;
+  goalEl.textContent = `${Math.round(acc*100)}% accuracy · ${stars} / 5 stars`;
+  controlsEl.innerHTML = `<button id="retryBtn" class="secondary">Retry</button>
+      <button id="mapBtn">Back to map →</button>`;
+  $("retryBtn").onclick = ()=>{ restoreControls(); startLesson(lesson); };
+  $("mapBtn").onclick = ()=>{ restoreControls(); endToMap(); };
+  sess = null;
+}
+
+function endToMap(){ sess = null; piano.clear(); piano.clearHighlight(); restoreControls(); course.showMap(); }
+
+// ---- live chord identification while you build the chord ----
+function identify(){
+  if (!sess || sess.answered) return;
+  const notes = [...piano.held.keys()].sort((a,b)=>a-b);
+  if (!notes.length){ liveEl.textContent = ""; liveEl.className = "liveread"; return; }
+  const bassPc = notes[0]%12;
+  const pcs = [...new Set(notes.map(n=>n%12))];
+  for (const [tk,tv] of Object.entries(CHORD_TYPES)){
+    if (pcs.length !== tv.intervals.length) continue;
+    for (let r=0;r<12;r++){
+      const chordPcs = tv.intervals.map(i=>(r+i)%12);
+      const set = new Set(chordPcs);
+      if (pcs.every(p=>set.has(p)) && chordPcs.every(p=>pcs.includes(p))){
+        const inv = chordPcs.indexOf(bassPc);
+        liveEl.innerHTML = `You're playing: <b>${NOTE_NAMES[r]} ${tv.symbol} · ${INV_NAMES[inv]}</b>`;
+        liveEl.className = "liveread match"; return;
+      }
+    }
+  }
+  liveEl.innerHTML = "You're playing: <b>" + pcs.map(p=>NOTE_NAMES[p]).join(" ") + "</b>";
+  liveEl.className = "liveread";
+}
+
+// ---- feedback / stats / mastery row ----
+function setFb(good, msg){ fbEl.className = "feedback " + (good?"good":"bad"); fbEl.textContent = msg; }
+function updateStats(){
+  if (!sess) return;
+  const mastered = sess.skills.filter(s=>sess.mastery[s.key]>=CFG.masterN).length;
+  sMaster.textContent = `${mastered}/${sess.skills.length}`;
+  sScore.textContent = ""+sess.correct;
+  sGoal.textContent = CFG.masterN+"× each";
+  sAcc.textContent = sess.attempts ? Math.round(100*sess.correct/sess.attempts)+"%" : "—";
+}
+function renderMasterRow(){
+  if (!sess){ masterrowEl.hidden = true; return; }
+  masterrowEl.hidden = false;
+  masterrowEl.innerHTML = sess.skills.map(s=>{
+    const v = sess.mastery[s.key], done = v>=CFG.masterN;
+    let dots=""; for (let i=0;i<CFG.masterN;i++) dots += `<span class="d${i<v?" on":""}"></span>`;
+    const label = `${CHORD_TYPES[s.q].symbol} ${INV_SHORT[s.inv]}`;
+    return `<span class="m${done?" done":""}">${label}${done?" ✓":""}<span class="dots">${dots}</span></span>`;
+  }).join("");
+}
+
+// ---- settings wiring ----
+$("openVoicing").onchange = e=>{ state.openVoicing = e.target.checked; if (sess && sess.prompt && !sess.answered){ sess.lastAttemptSig = null;
+  basslineEl.innerHTML = state.openVoicing
+    ? `Bass note must be <b>${NOTE_NAMES[sess.prompt.targetPcs[0]]}</b> — spread the other notes anywhere`
+    : `Play bottom → top · lowest note (bass): <b>${NOTE_NAMES[sess.prompt.targetPcs[0]]}</b>`; } };
+$("autoHear").onchange = e=> state.autoHear = e.target.checked;
+$("labels").onchange = e=>{ state.labels = e.target.checked; piano.setLabels(e.target.checked); };
+$("sound").onchange = e=>{ state.sound = e.target.checked; piano.setSound(e.target.checked); };
+$("resetBtn").onclick = ()=>{ course.resetProgress(); shell.closeSettings(); };
+</script>
+</body>
+</html>

@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<!--
+  LEARN THE KEYS — a guided, TypingClub-style course for the music suite.
+  A level map of small lessons that start with two notes (C & D) and grow one
+  white-key pair at a time across an octave, gated by stars, capped by a
+  "Note Ninja" timed game. Built on Trainer.curriculum (map/unlock/stars) +
+  the shared shell/piano/midi/audio/store.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#07080c" />
+<title>Learn the Keys</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="../shared/base.css" />
+<style>
+  /* ---- course map (level tiles) ---- */
+  .course-intro { text-align:center; margin: 6px 0 26px; }
+  .course-intro h1 { font-family: var(--font-display); font-size: clamp(28px,6vw,42px); font-weight:700; letter-spacing:-0.03em; margin:0; }
+  .course-intro h1 .accent { background: linear-gradient(120deg,var(--accent),var(--accent-2)); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+  .course-intro p { color: var(--muted); max-width:520px; margin:10px auto 0; font-size:14.5px; line-height:1.6; }
+  .unit { margin-bottom: 30px; }
+  .unit-title { font-family: var(--font-display); font-size:15px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:2px; margin:0 0 14px; }
+  .tiles { display:grid; grid-template-columns:repeat(auto-fill, minmax(148px,1fr)); gap:13px; }
+  .tile {
+    position:relative; text-align:left; cursor:pointer; color:inherit;
+    background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0) 42%), var(--panel);
+    border:1px solid var(--border); border-radius:18px; padding:16px 14px 14px;
+    min-height:140px; display:flex; flex-direction:column; gap:6px;
+    box-shadow:none; backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+    transition: transform .18s var(--ease), border-color .18s, box-shadow .18s;
+  }
+  .tile:hover { transform:translateY(-4px); border-color:var(--border-strong); box-shadow:var(--shadow); }
+  .tile .num { font-family:var(--font-display); font-size:22px; font-weight:700; line-height:1; letter-spacing:-0.02em;
+    background:linear-gradient(180deg,#fff,#c6ccdb); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+  .tile .tico { font-size:30px; line-height:1; margin:2px 0 auto; }
+  .tile .tname { font-size:13px; font-weight:600; line-height:1.3; }
+  .tile .stars { display:flex; gap:5px; margin-top:8px; }
+  .pip { width:10px; height:10px; border-radius:50%; background:var(--panel2); border:1px solid var(--border); }
+  .pip.on { background:linear-gradient(135deg,var(--warn),#ffb347); border-color:transparent; box-shadow:0 0 8px rgba(255,207,91,0.7); }
+  .tile.done { border-color: rgba(61,220,160,0.35); }
+  .tile.locked { opacity:.45; cursor:not-allowed; }
+  .tile.locked:hover { transform:none; box-shadow:none; border-color:var(--border); }
+  .tile .lock { position:absolute; top:14px; right:14px; font-size:15px; opacity:.8; }
+  .tile:disabled { background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0) 42%), var(--panel); }
+
+  /* ---- lesson view extras ---- */
+  #lesson .backrow { margin-bottom:14px; }
+  .hearts { min-height:26px; font-size:22px; letter-spacing:4px; margin-top:6px; }
+  .hearts .off { opacity:.22; }
+  #staff { width:min(300px,86%); height:150px; display:block; margin:6px auto 0; }
+  #staff .lines { stroke:var(--muted-2); stroke-width:1.4; }
+  #staff .ledger { stroke:var(--text); stroke-width:1.6; }
+  #staff .clef { fill:var(--text); font-family:serif; }
+  #staff .head { fill:var(--accent); }
+  #staff .stem { stroke:var(--accent); stroke-width:2; }
+  .result-stars { display:flex; gap:12px; justify-content:center; margin:6px 0 4px; }
+  .result-stars .pip { width:30px; height:30px; }
+  .goal { color:var(--muted); font-size:13px; margin-top:10px; font-family:var(--font-mono); }
+  .primerbody { text-align:left; max-width:520px; margin:0 auto; font-size:15px; line-height:1.7; color:var(--text); }
+  .primerbody b { color:var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap" id="app">
+  <!-- Trainer.shell injects topbar + MIDI help banner here -->
+  <!-- Trainer.curriculum injects the #course-map before #lesson -->
+
+  <div class="course-intro">
+    <h1>Learn <span class="accent">the Keys</span></h1>
+    <p>Start with two notes and grow one pair at a time. Clear a lesson to unlock the next — and watch out for the Note Ninja.</p>
+  </div>
+
+  <div id="lesson" hidden>
+    <div class="backrow"><button id="backBtn" class="secondary">← Map</button></div>
+
+    <div class="hero">
+      <div class="eyebrow" id="eyebrow">Prompt</div>
+      <div id="prompt" class="chord-name"><span class="root">—</span></div>
+      <svg id="staff" viewBox="0 0 240 150" hidden aria-hidden="true"></svg>
+      <div id="hearts" class="hearts" hidden></div>
+      <div id="feedback" class="feedback"></div>
+      <div id="goal" class="goal"></div>
+      <div id="timerbar" class="timerbar"></div>
+    </div>
+
+    <div class="controls" id="controls">
+      <button id="hearBtn" class="playbtn" aria-label="Hear it" title="Hear it"><span class="tri">▶</span></button>
+      <button id="skipBtn" class="secondary">Skip ⏭</button>
+    </div>
+
+    <div class="answers chips" id="answers" hidden></div>
+
+    <div class="piano-wrap"><div id="piano" class="piano"></div></div>
+
+    <div class="stats-row">
+      <div class="stats">
+        <div class="stat"><div id="sStreak" class="n">0</div><div class="l">Streak</div></div>
+        <div class="stat"><div id="sScore" class="n">0</div><div class="l">Correct</div></div>
+        <div class="stat"><div id="sGoal" class="n">—</div><div class="l">Goal</div></div>
+        <div class="stat"><div id="sAcc" class="n">—</div><div class="l">Accuracy</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="../shared/theory.js"></script>
+<script src="../shared/audio.js"></script>
+<script src="../shared/piano.js"></script>
+<script src="../shared/midi.js"></script>
+<script src="../shared/store.js"></script>
+<script src="../shared/shell.js"></script>
+<script src="../shared/curriculum.js"></script>
+<script>
+"use strict";
+const T = Trainer.theory, C = Trainer.curriculum;
+const store = Trainer.store.open("learn-keys");
+
+// pitch classes of the white keys, in octave 4 (middle C = MIDI 60)
+const PC_TO_LETTER = {0:"C",2:"D",4:"E",5:"F",7:"G",9:"A",11:"B"};
+const midiFor = pc => 60 + pc;               // octave-4 anchor
+const letterFor = pc => PC_TO_LETTER[pc];
+
+// ---- Unit 1 course definition ----
+const COURSE = {
+  title:"Learn the Keys",
+  units:[{
+    title:"Unit 1 · The White Keys",
+    lessons:[
+      { id:"u1l1", type:"intro",    title:"Meet the Keyboard" },
+      { id:"u1l2", type:"keys",     title:"Keys C & D", notes:[0,2] },
+      { id:"u1l3", type:"review",   title:"Review: C & D" },
+      { id:"u1l4", type:"practice", title:"Practice: C & D" },
+      { id:"u1l5", type:"keys",     title:"Keys E & F", notes:[4,5] },
+      { id:"u1l6", type:"review",   title:"Review: C–F" },
+      { id:"u1l7", type:"practice", title:"Practice: C–F" },
+      { id:"u1l8", type:"play",     title:"Note Ninja: C–F" },
+      { id:"u1l9", type:"keys",     title:"Keys G & A", notes:[7,9] },
+      { id:"u1l10",type:"review",   title:"Review: C–A" },
+      { id:"u1l11",type:"keys",     title:"Key B", notes:[11] },
+      { id:"u1l12",type:"review",   title:"All White Keys" },
+      { id:"u1l13",type:"practice", title:"Practice: Full Octave" },
+      { id:"u1l14",type:"play",     title:"Note Ninja: Boss" },
+    ],
+  }],
+};
+
+// ---- settings ----
+const state = {
+  mode: "play",          // "play" = prompt→press key, "name" = highlight→tap chip
+  promptStyle: "letter", // "letter" | "staff"  (applies to play mode)
+};
+const settingsSections = [
+  { title:"How you answer", html:`
+      <div class="seg" id="modeSeg">
+        <button data-v="play" class="on">Play the note</button>
+        <button data-v="name">Name the note</button>
+      </div>
+      <p class="goal" style="margin-top:10px">Play the note: read the prompt, press the right key.<br>Name the note: a key lights up, tap its name.</p>` },
+  { title:"Reading style", html:`
+      <div class="seg" id="styleSeg">
+        <button data-v="letter" class="on">Letter name</button>
+        <button data-v="staff">Staff note</button>
+      </div>
+      <p class="goal" style="margin-top:10px">Staff shows the note on a treble clef — real note-reading.</p>` },
+  { title:"Progress", html:`<button id="resetBtn" class="linkbtn">Reset all course progress</button>` },
+];
+
+const shell = Trainer.shell.mount({
+  mountEl: document.getElementById("app"),
+  title:"Learn the Keys", subtitle:"a guided course",
+  settingsSections,
+});
+
+// ---- piano + midi ----
+const piano = Trainer.piano.create(document.getElementById("piano"), {
+  lowMidi:60, highMidi:72, labels:true,
+  onNoteOn(n){ if (state.mode==="play") tryAnswerKey(n); },
+});
+Trainer.midi.init({
+  onNoteOn:n=>piano.noteOn(n), onNoteOff:n=>piano.noteOff(n),
+  selectEl: shell.midiSelectEl, statusEl: shell.statusEl, helpEl: shell.helpEl,
+});
+Trainer.audio.loadInstrument("piano");
+
+// ---- DOM refs ----
+const $ = id => document.getElementById(id);
+const eyebrowEl=$("eyebrow"), promptEl=$("prompt"), staffEl=$("staff"),
+      heartsEl=$("hearts"), fbEl=$("feedback"), goalEl=$("goal"),
+      barEl=$("timerbar"), answersEl=$("answers"), controlsEl=$("controls"),
+      sStreak=$("sStreak"), sScore=$("sScore"), sGoal=$("sGoal"), sAcc=$("sAcc");
+
+// ---- the course controller (map + unlock + stars) ----
+const course = C.mount({
+  mountEl: document.getElementById("app"),
+  course: COURSE, store, onPlay: startLesson,
+});
+$("backBtn").onclick = endToMap;
+
+// =====================================================================
+//  LESSON RUNNER
+// =====================================================================
+let sess = null;      // active session
+let timerId = null;   // ninja countdown interval
+
+const CFG = {
+  quizTarget: 10,       // prompts in keys/review
+  practiceTarget: 14,   // prompts in practice (speed-weighted)
+  playTarget: 12,       // correct hits to survive the ninja
+  hearts: 3,
+  ninjaStartMs: 3600, ninjaMinMs: 1500, ninjaStepMs: 160,
+};
+
+function startLesson(lesson){
+  stopTimer();
+  course.showLesson();
+  answersEl.hidden = true; controlsEl.hidden = false;
+  staffEl.hidden = true; promptEl.hidden = false; heartsEl.hidden = true;
+  barEl.style.opacity = 0; fbEl.className = "feedback"; fbEl.textContent = "";
+
+  if (lesson.type === "intro"){ return showPrimer(lesson); }
+
+  const isPlay = lesson.type === "play";
+  const pool = course.poolFor(lesson);
+  sess = {
+    lesson, pool, isPlay,
+    target: isPlay ? CFG.playTarget : (lesson.type==="practice" ? CFG.practiceTarget : CFG.quizTarget),
+    correct:0, attempts:0, wrongThisPrompt:0,
+    hearts: CFG.hearts, times:[], lastT:0, lastPc:null,
+    prompt:null, awaiting:false, ninjaMs: CFG.ninjaStartMs, over:false,
+  };
+  if (isPlay){ heartsEl.hidden = false; drawHearts(); }
+  goalEl.textContent = isPlay
+    ? `Hit ${CFG.playTarget} notes before the ninja runs you out of ❤`
+    : `Get through ${sess.target} notes — aim for 5 stars`;
+  updateStats();
+  nextPrompt();
+}
+
+function showPrimer(lesson){
+  sess = null;
+  eyebrowEl.textContent = "Lesson 1";
+  promptEl.innerHTML = `<span class="root" style="font-size:.55em">Meet the Keyboard</span>`;
+  staffEl.hidden = true; heartsEl.hidden = true; goalEl.textContent = "";
+  fbEl.className = "feedback";
+  fbEl.innerHTML = `<div class="primerbody">
+      Your keyboard is a repeating pattern of <b>black-key groups</b>: twos and threes.<br><br>
+      <b>Middle C</b> is the white key just to the <b>left of every group of two black keys</b> — right in the middle of the piano.<br><br>
+      From C, the white keys climb the alphabet: <b>C D E F G A B</b>, then start over.<br><br>
+      That’s all you need. Tap <b>Start</b> and we’ll take it two notes at a time.
+    </div>`;
+  answersEl.hidden = true;
+  controlsEl.hidden = false;
+  controlsEl.innerHTML = `<button id="startBtn">Start →</button>`;
+  $("startBtn").onclick = ()=>{ course.record(lesson.id, {stars:1}); restoreControls(); endToMap(); };
+  piano.clearHighlight();
+}
+
+function restoreControls(){
+  controlsEl.innerHTML = `<button id="hearBtn" class="playbtn" aria-label="Hear it" title="Hear it"><span class="tri">▶</span></button>
+      <button id="skipBtn" class="secondary">Skip ⏭</button>`;
+  $("hearBtn").onclick = ()=>{ if (sess && sess.prompt) Trainer.audio.playNote(sess.prompt.midi, 700); };
+  $("skipBtn").onclick = ()=>{ if (sess) resolve(false, true); };
+}
+restoreControls();
+
+function pickPc(){
+  const pool = sess.pool;
+  const weights = pool.map(pc => store.weightFor("pc:"+pc));
+  let sum = weights.reduce((a,b)=>a+b,0), pc;
+  for (let guard=0; guard<40; guard++){
+    let r = Math.random()*sum;
+    for (let i=0;i<pool.length;i++){ r -= weights[i]; if (r<=0){ pc = pool[i]; break; } }
+    if (pool.length===1 || pc!==sess.lastPc) break;   // avoid immediate repeats
+  }
+  return pc;
+}
+
+function nextPrompt(){
+  if (!sess || sess.over) return;
+  const pc = pickPc();
+  sess.lastPc = pc;
+  sess.prompt = { pc, midi: midiFor(pc) };
+  sess.wrongThisPrompt = 0;
+  fbEl.className = "feedback"; fbEl.textContent = "";
+  piano.clear();   // release any latched keys so each prompt starts fresh (mouse/touch)
+  eyebrowEl.textContent = sess.lesson.title;
+
+  if (state.mode === "name"){
+    // highlight the key, ask for its name
+    answersEl.hidden = false; barEl.style.opacity = 0; stopTimer();
+    promptEl.hidden = false; staffEl.hidden = true;
+    promptEl.innerHTML = `<span class="root" style="font-size:.5em">Name this key</span>`;
+    piano.highlight([pc]);
+    renderNameChips();
+  } else {
+    answersEl.hidden = true;
+    sess.awaiting = true;
+    if (state.promptStyle === "staff"){
+      promptEl.hidden = true; staffEl.hidden = false; renderStaff(pc);
+    } else {
+      staffEl.hidden = true; promptEl.hidden = false;
+      promptEl.classList.remove("pop"); void promptEl.offsetWidth; promptEl.classList.add("pop");
+      promptEl.innerHTML = `<span class="root">${letterFor(pc)}</span>`;
+    }
+    if (sess.isPlay) startTimer();
+  }
+  sess.lastT = perfNow();
+}
+
+function renderNameChips(){
+  answersEl.innerHTML = sess.pool.map(pc =>
+    `<button class="chip" data-pc="${pc}">${letterFor(pc)}</button>`).join("");
+  answersEl.querySelectorAll(".chip").forEach(ch => {
+    ch.onclick = ()=>{
+      if (!sess || sess.answeredName) return;
+      const pc = +ch.dataset.pc;
+      const ok = pc === sess.prompt.pc;
+      if (!ok) ch.classList.add("wrong");
+      resolve(ok);
+    };
+  });
+}
+
+function tryAnswerKey(n){
+  if (!sess || !sess.awaiting) return;
+  sess.awaiting = false;
+  resolve(n === sess.prompt.midi);
+}
+
+// resolve one prompt.  skip=true means the user skipped (counts as miss, no heart hit continues)
+function resolve(ok, skip){
+  if (!sess || sess.over) return;
+  stopTimer();
+  sess.attempts += 1; store.total += 1;
+  const pc = sess.prompt.pc;
+
+  if (ok){
+    sess.correct += 1; store.correct += 1;
+    const dt = perfNow() - sess.lastT; sess.times.push(dt);
+    setFb(true, sess.isPlay ? "🥷 "+sess.correct : "✅ Nice");
+    // in name mode no key was pressed, so sound the note as reinforcement
+    if (state.mode === "name") Trainer.audio.playNote(sess.prompt.midi, 500);
+    sess.ninjaMs = Math.max(CFG.ninjaMinMs, sess.ninjaMs - CFG.ninjaStepMs);
+  } else {
+    store.bumpMiss("pc:"+pc);
+    setFb(false, skip ? "⏭ "+letterFor(pc) : "❌ that was "+letterFor(pc));
+    if (sess.isPlay){ sess.hearts -= 1; drawHearts(); }
+  }
+  store.save();
+  updateStats();
+
+  // reveal the answer briefly on a miss (in play-the-note mode)
+  if (!ok && state.mode==="play") piano.highlight([pc]);
+
+  const delay = ok ? (sess.isPlay ? 360 : 520) : 780;
+  const done = sess.isPlay
+    ? (sess.hearts <= 0 || sess.correct >= sess.target)
+    : (sess.attempts >= sess.target);
+  if (done){ sess.over = true; setTimeout(finish, delay); }
+  else setTimeout(nextPrompt, delay);
+}
+
+function finish(){
+  stopTimer(); piano.clear();
+  const acc = sess.attempts ? sess.correct/sess.attempts : 0;
+  const avgMs = sess.times.length ? sess.times.reduce((a,b)=>a+b,0)/sess.times.length : 9999;
+  let stars, won = true;
+  if (sess.isPlay){
+    won = sess.correct >= sess.target;
+    if (won) stars = 3 + (sess.hearts>=CFG.hearts ? 2 : sess.hearts>=CFG.hearts-1 ? 1 : 0);
+    else { const p = sess.correct/sess.target; stars = p>=0.66?2 : p>=0.33?1 : 0; }
+  } else {
+    const fast = sess.lesson.type==="practice" && avgMs < 1500;
+    stars = C.starsFor(acc, {fast});
+  }
+  course.record(sess.lesson.id, {stars, acc:Math.round(acc*100)});
+  showResult(stars, won, acc);
+}
+
+function showResult(stars, won, acc){
+  const lesson = sess.lesson;
+  answersEl.hidden = true; barEl.style.opacity = 0; heartsEl.hidden = true;
+  promptEl.hidden = false; staffEl.hidden = true;
+  eyebrowEl.textContent = won ? "Lesson complete" : "Give it another go";
+  promptEl.innerHTML = `<span class="root" style="font-size:.5em">${won ? (stars>=4?"Brilliant!":"Cleared!") : "Not quite"}</span>`;
+  fbEl.className = "feedback " + (won ? "good" : "bad");
+  fbEl.innerHTML = `<div class="result-stars">${C.starPips(stars)}</div>`;
+  goalEl.textContent = `${Math.round(acc*100)}% accuracy · ${stars} / 5 stars`;
+  controlsEl.innerHTML = `<button id="retryBtn" class="secondary">Retry</button>
+      <button id="mapBtn">${won ? "Back to map →" : "Back to map"}</button>`;
+  $("retryBtn").onclick = ()=>{ restoreControls(); startLesson(lesson); };
+  $("mapBtn").onclick = ()=>{ restoreControls(); endToMap(); };
+  const s = sess; sess = null; void s;
+}
+
+function endToMap(){
+  stopTimer(); sess = null; piano.clear();
+  restoreControls();
+  course.showMap();
+}
+
+// ---- feedback + stats + hearts ----
+function setFb(good, msg){ fbEl.className = "feedback " + (good?"good":"bad"); fbEl.textContent = msg; }
+function drawHearts(){
+  let h = "";
+  for (let i=0;i<CFG.hearts;i++) h += `<span class="${i<sess.hearts?"":"off"}">❤</span>`;
+  heartsEl.innerHTML = h;
+}
+function updateStats(){
+  if (!sess) return;
+  sStreak.textContent = ""+sess.correct;       // running correct as a "streak" of the session
+  sScore.textContent = ""+sess.correct;
+  sGoal.textContent = sess.target + (sess.isPlay ? " ❤"+sess.hearts : "");
+  sAcc.textContent = sess.attempts ? Math.round(100*sess.correct/sess.attempts)+"%" : "—";
+}
+
+// ---- ninja countdown timer (uses the .timerbar in the hero) ----
+function perfNow(){ return (window.performance && performance.now) ? performance.now() : new Date().getTime(); }
+function startTimer(){
+  stopTimer();
+  const dur = sess.ninjaMs, start = perfNow();
+  barEl.style.opacity = 1; barEl.style.transform = "scaleX(1)";
+  // setInterval (not rAF) so the countdown survives a blurred/hidden tab
+  timerId = setInterval(function(){
+    if (!sess || sess.over){ stopTimer(); return; }
+    const left = 1 - (perfNow()-start)/dur;
+    if (left <= 0){ stopTimer(); barEl.style.transform = "scaleX(0)"; sess.awaiting = false; resolve(false); return; }
+    barEl.style.transform = "scaleX("+left.toFixed(3)+")";
+  }, 50);
+}
+function stopTimer(){ if (timerId){ clearInterval(timerId); timerId = null; } barEl.style.transform = "scaleX(1)"; }
+
+// ---- treble-clef staff renderer (C4–B4, ledger line for middle C) ----
+function renderStaff(pc){
+  // diatonic value: C=0..B=6 within octave; E4 sits on the bottom line
+  const LI = {0:0,2:1,4:2,5:3,7:4,9:5,11:6}; // pc -> letter index
+  const value = LI[pc] + 7*4;                // octave 4
+  const yE4 = 110, valE4 = 2 + 7*4;          // E4 = bottom line
+  const y = yE4 + (valE4 - value)*6;         // 6px per diatonic step
+  const cx = 168;
+  let s = "";
+  for (let i=0;i<5;i++){ const ly = 60 + i*12.5; s += `<line class="lines" x1="34" y1="${ly}" x2="220" y2="${ly}"/>`; }
+  s += `<text class="clef" x="34" y="112" font-size="76">𝄞</text>`;
+  if (y > 112) s += `<line class="ledger" x1="${cx-15}" y1="${y}" x2="${cx+15}" y2="${y}"/>`; // C4 ledger
+  s += `<ellipse class="head" cx="${cx}" cy="${y}" rx="9" ry="6.5" transform="rotate(-18 ${cx} ${y})"/>`;
+  s += `<line class="stem" x1="${cx+8}" y1="${y-2}" x2="${cx+8}" y2="${y-42}"/>`;
+  staffEl.innerHTML = s;
+}
+
+// ---- settings wiring ----
+function wireSeg(id, key, after){
+  const seg = $(id);
+  seg.querySelectorAll("button").forEach(b => b.onclick = ()=>{
+    state[key] = b.dataset.v;
+    seg.querySelectorAll("button").forEach(x=>x.classList.remove("on"));
+    b.classList.add("on");
+    if (after) after();
+  });
+}
+wireSeg("modeSeg", "mode", ()=>{ if (sess && !sess.over) nextPrompt(); });
+wireSeg("styleSeg", "promptStyle", ()=>{ if (sess && !sess.over && state.mode==="play") nextPrompt(); });
+$("resetBtn").onclick = ()=>{ course.resetProgress(); shell.closeSettings(); };
+</script>
+</body>
+</html>
