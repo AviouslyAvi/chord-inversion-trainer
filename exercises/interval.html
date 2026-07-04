@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#07080c" />
+<meta name="description" content="Hands-free interval trainer for MIDI keyboards — identify intervals by sight and play them back by ear." />
+<title>Interval Trainer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="../shared/base.css" />
+<style>
+  /* page-scoped: bigger tappable answer pills in the hero */
+  .answers { justify-content: center; margin-top: 18px; min-height: 40px; }
+  .answers .chip { padding: 11px 16px; font-size: 15px; }
+  .answers .chip .sh { font-family: var(--font-mono); color: var(--muted); margin-left: 7px; font-size: 12px; }
+  .answers .chip.on .sh { color: rgba(255,255,255,.8); }
+  .answers.hide { display: none; }
+</style>
+</head>
+<body>
+<div class="wrap" id="app">
+  <!-- Trainer.shell injects the topbar + MIDI help banner here -->
+
+  <div class="hero">
+    <div id="eyebrow" class="eyebrow">Name this interval</div>
+    <div id="prompt" class="chord-name"><span class="root">—</span></div>
+    <div id="sub" class="bassline"></div>
+    <div id="answers" class="chips answers"></div>
+    <div id="tries" class="tries"></div>
+    <div id="feedback" class="feedback"></div>
+    <div id="liveRead" class="liveread"></div>
+  </div>
+
+  <div class="controls">
+    <button id="hearBtn" class="playbtn" aria-label="Hear it" title="Hear it"><span class="tri">▶</span></button>
+    <button id="skipBtn" class="secondary">Skip ⏭</button>
+    <button id="revealBtn" class="secondary">Reveal answer</button>
+  </div>
+
+  <div class="piano-wrap"><div id="piano" class="piano"></div></div>
+
+  <div class="stats-row">
+    <div class="stats">
+      <div class="stat"><div id="streak" class="n">0</div><div class="l">Streak</div></div>
+      <div class="stat"><div id="best" class="n">0</div><div class="l">Best</div></div>
+      <div class="stat"><div id="correct" class="n">0</div><div class="l">Correct</div></div>
+      <div class="stat"><div id="total" class="n">0</div><div class="l">Attempts</div></div>
+      <div class="stat"><div id="acc" class="n">—</div><div class="l">Accuracy</div></div>
+    </div>
+  </div>
+</div>
+
+<script src="../shared/theory.js"></script>
+<script src="../shared/audio.js"></script>
+<script src="../shared/piano.js"></script>
+<script src="../shared/midi.js"></script>
+<script src="../shared/store.js"></script>
+<script src="../shared/shell.js"></script>
+<script>
+"use strict";
+const T = Trainer.theory;
+const { INTERVALS, NOTE_NAMES } = T;
+const REVEAL_AFTER = 3;
+
+const store = Trainer.store.open("interval");
+
+const state = {
+  // selected interval sizes (semitones). Unison(0) & Octave(12) off by default.
+  intervals: new Set([1,2,3,4,5,6,7,8,9,10,11,12]),
+  mode: "see",            // "see" (name it) | "hear" (play it back)
+  direction: "asc",       // "asc" | "desc" | "both"
+  playStyle: "melodic",   // "harmonic" | "melodic"  (HEAR playback)
+  requireDir: false,      // HEAR: played notes must match asc/desc direction
+  anyOctave: false,       // HEAR: accept the interval an octave off (compound)
+  weakFocus: true,
+  autoHear: true,         // auto-play prompt on each new item
+  instrument: "piano",
+  opts: { labels:true, sound:true },
+  current: null,
+  played: [],             // HEAR: midi notes captured in press order
+  streak: 0,
+  answered: false,
+  wrongTries: 0,
+  exactMidis: [],         // SEE: exact keys to keep lit through redraws
+};
+
+function ivName(s){ return INTERVALS[s].name; }
+function ivShort(s){ return INTERVALS[s].short; }
+function midiName(m){ return NOTE_NAMES[m%12] + (Math.floor(m/12)-1); }
+function ivKey(s){ return "iv:"+s; }
+function keyLabel(k){ return ivName(+k.split(":")[1]); }
+
+// ---- settings ----
+const settingsSections = [
+  { title:"Intervals", html:`
+      <h4>Which intervals to drill</h4>
+      <div id="ivChips" class="chips"></div>` },
+  { title:"Mode & direction", html:`
+      <h4>Answer mode</h4>
+      <div class="seg" id="modeSeg">
+        <button data-mode="see" class="on">See &amp; name</button>
+        <button data-mode="hear">Hear &amp; play back</button>
+      </div>
+      <h4>Direction</h4>
+      <div class="seg" id="dirSeg">
+        <button data-dir="asc" class="on">Ascending</button>
+        <button data-dir="desc">Descending</button>
+        <button data-dir="both">Both</button>
+      </div>
+      <div id="hearOpts">
+        <h4>Ear playback</h4>
+        <div class="seg" id="styleSeg">
+          <button data-style="melodic" class="on">Melodic (one at a time)</button>
+          <button data-style="harmonic">Harmonic (together)</button>
+        </div>
+        <div class="switch-list" style="margin-top:12px;">
+          <label class="switch"><input type="checkbox" id="requireDir" /><span class="track"></span><span class="txt">Require correct direction when I play it back</span></label>
+          <label class="switch"><input type="checkbox" id="anyOctave" /><span class="track"></span><span class="txt">Accept the interval an octave off (compound)</span></label>
+        </div>
+      </div>` },
+  { title:"Practice & audio", html:`
+      <h4>Weak-spot focus</h4>
+      <div class="switch-list">
+        <label class="switch"><input type="checkbox" id="weakFocus" checked /><span class="track"></span><span class="txt">Show my most-missed intervals more often</span></label>
+      </div>
+      <h4>Audio &amp; display</h4>
+      <div class="switch-list">
+        <label class="switch"><input type="checkbox" id="autoHear" checked /><span class="track"></span><span class="txt">Auto-play the interval on each new prompt</span></label>
+        <label class="switch"><input type="checkbox" id="labels" checked /><span class="track"></span><span class="txt">Note labels on keys</span></label>
+        <label class="switch"><input type="checkbox" id="sound" checked /><span class="track"></span><span class="txt">Sound when I play</span></label>
+      </div>
+      <div class="row">
+        <label>Instrument:
+          <select id="instSel">
+            <option value="piano">Acoustic Piano</option>
+            <option value="epiano">Electric Piano</option>
+            <option value="organ">Organ</option>
+            <option value="synth">Synth</option>
+          </select>
+        </label>
+        <span id="soundNote" style="color:var(--muted);font-size:12px;">loading piano…</span>
+      </div>` },
+  { title:"Weak spots & saved progress", html:`
+      <h4>Most-missed (saved on this device)</h4>
+      <div id="weakList" class="weak-list"><span class="none">No misses recorded yet — go get some wrong. 😄</span></div>
+      <div class="row"><button id="resetStats" class="linkbtn">Reset all saved stats</button></div>` },
+];
+
+const shell = Trainer.shell.mount({
+  mountEl: document.getElementById("app"),
+  title: "Interval Trainer", subtitle: "hands free",
+  settingsSections,
+});
+
+// ---- piano + MIDI ----
+const piano = Trainer.piano.create(document.getElementById("piano"), {
+  labels: state.opts.labels, sound: state.opts.sound,
+  onNoteOn(n){
+    if (state.mode === "hear"){ captureHear(n); }
+    else { paintExact(); }        // keep the SEE prompt lit through the redraw
+  },
+  onNoteOff(){
+    if (state.mode !== "hear") paintExact();
+  },
+});
+Trainer.midi.init({
+  onNoteOn: n=> piano.noteOn(n),
+  onNoteOff: n=> piano.noteOff(n),
+  selectEl: shell.midiSelectEl, statusEl: shell.statusEl, helpEl: shell.helpEl,
+});
+
+// ---- selection (weak-spot weighted) ----
+function candidates(){
+  const dirs = state.direction === "both" ? [1,-1] : state.direction === "desc" ? [-1] : [1];
+  const out = [], seen = new Set();
+  for (const s of state.intervals){
+    for (const d of dirs){
+      const dir = s === 0 ? 1 : d;   // unison has no direction
+      const k = s + ":" + dir;
+      if (seen.has(k)) continue;
+      seen.add(k); out.push({ semis:s, dir });
+    }
+  }
+  return out;
+}
+function pickRandom(){
+  const cands = candidates();
+  if (!cands.length) return;
+  let chosen;
+  if (state.weakFocus){
+    const weights = cands.map(c => store.weightFor(ivKey(c.semis)));
+    let sum = weights.reduce((a,b)=>a+b,0), r = Math.random()*sum;
+    for (let i=0;i<cands.length;i++){ r -= weights[i]; if (r<=0){ chosen = cands[i]; break; } }
+    if (!chosen) chosen = cands[cands.length-1];
+  } else {
+    chosen = cands[Math.floor(Math.random()*cands.length)];
+  }
+  // pick a base so both notes fit the 48..84 keyboard
+  const base = 50 + Math.floor(Math.random()*23);   // 50..72
+  const lo = base, hi = base + chosen.semis;
+  chosen.pair = chosen.dir > 0 ? [lo, hi] : [hi, lo];  // ordered by direction
+  chosen.notes = [lo, hi];
+  state.current = chosen;
+  state.answered = false; state.wrongTries = 0; state.played = [];
+  piano.clear();
+  render();
+  if (state.mode === "hear" && state.autoHear) setTimeout(hearPrompt, 300);
+}
+
+// ---- render ----
+function render(){
+  const c = state.current;
+  const eyebrow = document.getElementById("eyebrow");
+  const promptEl = document.getElementById("prompt");
+  const sub = document.getElementById("sub");
+  const answers = document.getElementById("answers");
+  document.getElementById("feedback").textContent = "";
+  document.getElementById("feedback").className = "feedback";
+  document.getElementById("liveRead").textContent = "";
+  document.getElementById("tries").textContent = "";
+
+  if (!c){ promptEl.innerHTML = '<span class="root">—</span>'; return; }
+
+  if (state.mode === "see"){
+    eyebrow.textContent = "Name this interval";
+    const [a,b] = c.notes;                       // low, high
+    const dirArrow = c.dir > 0 ? "↑" : "↓";
+    promptEl.innerHTML = `<span class="root">${midiName(c.pair[0])}</span> <span class="qual">${dirArrow} ${midiName(c.pair[1])}</span>`;
+    sub.innerHTML = "How far apart are these two keys?";
+    answers.classList.remove("hide");
+    buildAnswers();
+    state.exactMidis = [a,b];
+    piano.clearHighlight();       // redraw, then paint the exact keys
+    paintExact();
+  } else {
+    eyebrow.textContent = "Play back this interval";
+    promptEl.innerHTML = '<span class="qual">🎧 Listen…</span>';
+    sub.innerHTML = `Press <b>▶</b> to (re)play, then play the two notes ${state.playStyle==="harmonic"?"together":"one after the other"}`;
+    answers.classList.add("hide");
+    state.exactMidis = [];
+    piano.clearHighlight();
+  }
+  promptEl.classList.remove("pop"); void promptEl.offsetWidth; promptEl.classList.add("pop");
+}
+
+function buildAnswers(){
+  const box = document.getElementById("answers");
+  box.innerHTML = "";
+  [...state.intervals].sort((a,b)=>a-b).forEach(s=>{
+    const chip = document.createElement("div");
+    chip.className = "chip"; chip.dataset.semis = s;
+    chip.innerHTML = `${ivName(s)}<span class="sh">${ivShort(s)}</span>`;
+    chip.onclick = ()=> guessSee(s, chip);
+    box.appendChild(chip);
+  });
+}
+
+// paint the exact prompt keys (SEE) — survives piano redraws
+function paintExact(){
+  const cont = document.getElementById("piano");
+  cont.querySelectorAll(".key.target").forEach(k=> k.classList.remove("target"));
+  state.exactMidis.forEach(m=>{
+    const k = cont.querySelector('.key[data-note="'+m+'"]');
+    if (k) k.classList.add("target");
+  });
+}
+
+function reveal(){
+  const c = state.current; if (!c) return;
+  const notesEl = document.getElementById("liveRead");
+  const dirArrow = c.dir > 0 ? "ascending" : "descending";
+  notesEl.innerHTML = `Answer: <b>${ivName(c.semis)}</b> (${ivShort(c.semis)}${c.semis===0?"":", "+dirArrow}) — ${midiName(c.pair[0])} → ${midiName(c.pair[1])}`;
+  notesEl.className = "liveread match";
+  state.exactMidis = c.notes;
+  piano.clearHighlight(); paintExact();
+}
+
+// ---- SEE evaluate (tap a chip) ----
+function guessSee(guess, chip){
+  const c = state.current;
+  if (!c || state.answered) return;
+  store.total++;
+  if (guess === c.semis){
+    state.answered = true;
+    store.correct++; state.streak++;
+    if (state.streak > store.best) store.best = state.streak;
+    chip.classList.add("on");
+    setFeedback(`✅ ${ivName(c.semis)}!`, "good");
+    updateStats(); store.save();
+    setTimeout(pickRandom, 800);
+  } else {
+    state.streak = 0; state.wrongTries++;
+    store.bumpMiss(ivKey(c.semis));
+    updateStats(); store.save(); renderWeakList();
+    setFeedback(`❌ That's a ${ivName(guess)} — try again`, "bad");
+    const left = REVEAL_AFTER - state.wrongTries;
+    document.getElementById("tries").textContent = left > 0 ? `${state.wrongTries} wrong · answer reveals after ${REVEAL_AFTER}` : "";
+    if (state.wrongTries >= REVEAL_AFTER){ state.answered = true; reveal(); setTimeout(pickRandom, 1600); }
+  }
+}
+
+// ---- HEAR evaluate (play two notes) ----
+function captureHear(n){
+  const c = state.current;
+  if (!c || state.answered) return;
+  state.played.push(n);
+  const el = document.getElementById("liveRead");
+  el.className = "liveread";
+  el.innerHTML = "You played: <b>" + state.played.map(midiName).join(" – ") + "</b>";
+  if (state.played.length >= 2) evaluateHear();
+}
+function sizeMatch(diff){
+  const s = state.current.semis;
+  if (state.anyOctave){
+    if (s === 0) return diff === 0;
+    if (s === 12) return diff !== 0 && Math.abs(diff)%12 === 0;
+    return Math.abs(diff) > 0 && Math.abs(diff)%12 === s%12;
+  }
+  return Math.abs(diff) === s;
+}
+function evaluateHear(){
+  const c = state.current;
+  const [a,b] = state.played;
+  const diff = b - a;                       // >0 ascending
+  let ok = sizeMatch(diff);
+  if (ok && state.requireDir && c.semis !== 0){
+    const sign = diff > 0 ? 1 : diff < 0 ? -1 : 0;
+    ok = sign === c.dir;
+  }
+  store.total++;
+  if (ok){
+    state.answered = true;
+    store.correct++; state.streak++;
+    if (state.streak > store.best) store.best = state.streak;
+    setFeedback(`✅ ${ivName(c.semis)}!`, "good");
+    updateStats(); store.save();
+    setTimeout(pickRandom, 850);
+  } else {
+    state.streak = 0; state.wrongTries++;
+    store.bumpMiss(ivKey(c.semis));
+    updateStats(); store.save(); renderWeakList();
+    const played = INTERVALS[Math.min(12, Math.abs(diff))];
+    setFeedback(`❌ You played ${played ? played.name : Math.abs(diff)+" semitones"} — try again`, "bad");
+    state.played = [];                     // let them replay
+    const left = REVEAL_AFTER - state.wrongTries;
+    document.getElementById("tries").textContent = left > 0 ? `${state.wrongTries} wrong · answer reveals after ${REVEAL_AFTER}` : "";
+    if (state.wrongTries >= REVEAL_AFTER){ state.answered = true; reveal(); setTimeout(pickRandom, 1800); }
+  }
+}
+
+function setFeedback(msg, cls){ const el=document.getElementById("feedback"); el.textContent=msg; el.className="feedback "+(cls||""); }
+function updateStats(){
+  document.getElementById("streak").textContent = state.streak;
+  document.getElementById("best").textContent = store.best;
+  document.getElementById("correct").textContent = store.correct;
+  document.getElementById("total").textContent = store.total;
+  document.getElementById("acc").textContent = store.total ? Math.round(store.correct/store.total*100)+"%" : "—";
+}
+
+// ---- audio prompt ----
+function hearPrompt(){
+  const c = state.current; if (!c) return;
+  if (state.playStyle === "harmonic") Trainer.audio.playNotes(c.pair, { stagger:0, durMs:1200 });
+  else Trainer.audio.playNotes(c.pair, { stagger:650, durMs:800 });
+}
+
+// ---- weak list ----
+function renderWeakList(){
+  const el = document.getElementById("weakList");
+  const entries = Object.entries(store.misses).filter(([,n])=>n>0).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  if (!entries.length){ el.innerHTML='<span class="none">No misses recorded yet — go get some wrong. 😄</span>'; return; }
+  el.innerHTML = entries.map(([k,n])=> `• <b style="color:var(--text)">${keyLabel(k)}</b> — missed ${n}×`).join("<br>");
+}
+
+// ---- settings chips + controls ----
+function buildIvChips(){
+  const box = document.getElementById("ivChips");
+  for (let s=0; s<=12; s++){
+    const chip = document.createElement("div");
+    chip.className = "chip" + (state.intervals.has(s) ? " on" : "");
+    chip.innerHTML = `${ivName(s)}<span class="sh" style="font-family:var(--font-mono);color:var(--muted);margin-left:6px;font-size:11px;">${ivShort(s)}</span>`;
+    chip.onclick = ()=>{ toggle(state.intervals, s); chip.classList.toggle("on"); ensureNonEmpty(); if(state.mode==="see" && !state.answered) buildAnswers(); };
+    box.appendChild(chip);
+  }
+}
+function toggle(set,v){ set.has(v)?set.delete(v):set.add(v); }
+function ensureNonEmpty(){
+  if (state.intervals.size === 0){
+    state.intervals.add(7);
+    document.querySelectorAll("#ivChips .chip")[7].classList.add("on");
+  }
+}
+function updateHearOptsVisibility(){
+  document.getElementById("hearOpts").style.display = state.mode === "hear" ? "block" : "none";
+}
+
+document.getElementById("hearBtn").onclick = hearPrompt;
+document.getElementById("revealBtn").onclick = ()=>{ if(state.current){ state.answered = true; reveal(); } };
+document.getElementById("skipBtn").onclick = ()=>{ state.streak=0; updateStats(); pickRandom(); };
+document.getElementById("weakFocus").onchange = e=> state.weakFocus = e.target.checked;
+document.getElementById("autoHear").onchange = e=> state.autoHear = e.target.checked;
+document.getElementById("requireDir").onchange = e=> state.requireDir = e.target.checked;
+document.getElementById("anyOctave").onchange = e=> state.anyOctave = e.target.checked;
+document.getElementById("labels").onchange = e=>{ state.opts.labels=e.target.checked; piano.setLabels(e.target.checked); if(state.mode==="see") paintExact(); };
+document.getElementById("sound").onchange = e=>{ state.opts.sound=e.target.checked; piano.setSound(e.target.checked); };
+document.getElementById("instSel").onchange = e=>{ state.instrument=e.target.value; Trainer.audio.ac().resume(); Trainer.audio.loadInstrument(state.instrument, setSoundNote); };
+
+document.getElementById("modeSeg").addEventListener("click", e=>{
+  const b=e.target.closest("button"); if(!b) return;
+  state.mode=b.dataset.mode;
+  document.querySelectorAll("#modeSeg button").forEach(x=>x.classList.toggle("on", x===b));
+  updateHearOptsVisibility();
+  pickRandom();
+});
+document.getElementById("dirSeg").addEventListener("click", e=>{
+  const b=e.target.closest("button"); if(!b) return;
+  state.direction=b.dataset.dir;
+  document.querySelectorAll("#dirSeg button").forEach(x=>x.classList.toggle("on", x===b));
+  pickRandom();
+});
+document.getElementById("styleSeg").addEventListener("click", e=>{
+  const b=e.target.closest("button"); if(!b) return;
+  state.playStyle=b.dataset.style;
+  document.querySelectorAll("#styleSeg button").forEach(x=>x.classList.toggle("on", x===b));
+  if(state.mode==="hear") render();
+});
+document.getElementById("resetStats").onclick = ()=>{
+  if (!confirm("Reset streak, accuracy, and weak-spot history?")) return;
+  store.resetAll(); state.streak=0; updateStats(); renderWeakList();
+};
+document.addEventListener("keydown", e=>{
+  if (shell.isSettingsOpen()) return;
+  if (e.key==="Enter") pickRandom();
+  if (e.key===" "){ e.preventDefault(); hearPrompt(); }   // space = replay
+});
+
+function setSoundNote(t){ const el=document.getElementById("soundNote"); if(el) el.textContent=t; }
+
+// ---- init ----
+buildIvChips();
+updateHearOptsVisibility();
+renderWeakList();
+updateStats();
+Trainer.audio.loadInstrument(state.instrument, setSoundNote);
+pickRandom();
+</script>
+</body>
+</html>

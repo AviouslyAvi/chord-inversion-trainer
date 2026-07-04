@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#07080c" />
+<meta name="description" content="Note Finder — see a note name and play or tap it on the keyboard, or name a highlighted key. Reverse note-reading practice for MIDI keyboards." />
+<title>Note Finder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="../shared/base.css" />
+</head>
+<body>
+<div class="wrap" id="app">
+  <!-- Trainer.shell injects the topbar + MIDI help banner here -->
+
+  <div class="hero">
+    <div id="eyebrow" class="eyebrow">Find this note</div>
+    <div id="prompt" class="chord-name"><span class="root">—</span></div>
+    <div id="hint" class="bassline"></div>
+    <div id="answers" class="chips" style="display:none;justify-content:center;margin-top:18px;"></div>
+    <div id="tries" class="tries"></div>
+    <div id="feedback" class="feedback"></div>
+  </div>
+
+  <div class="controls">
+    <button id="hearBtn" class="playbtn" aria-label="Hear it" title="Hear it"><span class="tri">▶</span></button>
+    <button id="skipBtn" class="secondary">Skip ⏭</button>
+    <button id="revealBtn" class="secondary">Reveal</button>
+  </div>
+
+  <div class="piano-wrap"><div id="piano" class="piano"></div></div>
+
+  <div class="stats-row">
+    <div class="stats">
+      <div class="stat"><div id="streak" class="n">0</div><div class="l">Streak</div></div>
+      <div class="stat"><div id="best" class="n">0</div><div class="l">Best</div></div>
+      <div class="stat"><div id="correct" class="n">0</div><div class="l">Correct</div></div>
+      <div class="stat"><div id="total" class="n">0</div><div class="l">Attempts</div></div>
+      <div class="stat"><div id="acc" class="n">—</div><div class="l">Accuracy</div></div>
+    </div>
+  </div>
+</div>
+
+<script src="../shared/theory.js"></script>
+<script src="../shared/audio.js"></script>
+<script src="../shared/piano.js"></script>
+<script src="../shared/midi.js"></script>
+<script src="../shared/store.js"></script>
+<script src="../shared/shell.js"></script>
+<script>
+"use strict";
+const T = Trainer.theory;
+const { NOTE_NAMES, FLAT_NAMES } = T;
+const REVEAL_AFTER = 3;
+const $ = id => document.getElementById(id);
+
+const store = Trainer.store.open("note-finder");
+
+const state = {
+  mode: "find",          // "find" = play/tap the named note; "name" = tap the name of the lit key
+  accidentals: true,     // include black keys (sharps/flats)
+  spelling: "sharp",     // "sharp" | "flat"
+  exactOctave: false,    // require the exact octave (find mode) vs any octave
+  weakFocus: true,
+  streak: 0,
+  current: null,         // { pc, midi } — midi set when a specific key matters
+  answered: false,
+  wrongTries: 0,
+  opts: { labels:true, sound:true },
+  instrument: "piano",
+};
+
+const NATURAL_PCS = [0,2,4,5,7,9,11];
+function poolPcs(){ return state.accidentals ? [0,1,2,3,4,5,6,7,8,9,10,11] : NATURAL_PCS.slice(); }
+function pcName(pc){ return (state.spelling==="flat" ? FLAT_NAMES : NOTE_NAMES)[((pc%12)+12)%12]; }
+function octaveOf(midi){ return Math.floor(midi/12) - 1; }
+function keyLabel(k){ return pcName(+k); }   // weak-spot key is the pitch class
+
+// ---- settings sections (rendered inside the shared modal) ----
+const settingsSections = [
+  { title:"What to practice", html:`
+      <h4>Mode</h4>
+      <div class="row">
+        <div class="seg" id="modeSeg">
+          <button data-mode="find" class="on">Find (play it)</button>
+          <button data-mode="name">Name (tap it)</button>
+        </div>
+      </div>
+      <h4>Note pool</h4>
+      <div class="switch-list">
+        <label class="switch"><input type="checkbox" id="accidentals" checked /><span class="track"></span><span class="txt">Include accidentals — the black keys (sharps / flats)</span></label>
+      </div>
+      <h4>Spelling</h4>
+      <div class="row">
+        <div class="seg" id="spellSeg">
+          <button data-spell="sharp" class="on">Sharps ♯</button>
+          <button data-spell="flat">Flats ♭</button>
+        </div>
+      </div>
+      <h4>Octave matching (Find mode)</h4>
+      <div class="switch-list">
+        <label class="switch"><input type="checkbox" id="exactOctave" /><span class="track"></span><span class="txt">Require the exact octave — otherwise any octave of the note counts</span></label>
+      </div>` },
+  { title:"Focus & audio", html:`
+      <h4>Weak-spot focus</h4>
+      <div class="switch-list">
+        <label class="switch"><input type="checkbox" id="weakFocus" checked /><span class="track"></span><span class="txt">Show my most-missed notes more often</span></label>
+      </div>
+      <h4>Audio & display</h4>
+      <div class="switch-list">
+        <label class="switch"><input type="checkbox" id="labels" checked /><span class="track"></span><span class="txt">Note labels on keys</span></label>
+        <label class="switch"><input type="checkbox" id="sound" checked /><span class="track"></span><span class="txt">Sound when I play</span></label>
+      </div>
+      <div class="row">
+        <label>Instrument:
+          <select id="instSel">
+            <option value="piano">Acoustic Piano</option>
+            <option value="epiano">Electric Piano</option>
+            <option value="organ">Organ</option>
+            <option value="synth">Synth</option>
+          </select>
+        </label>
+        <span id="soundNote" style="color:var(--muted);font-size:12px;">loading piano…</span>
+      </div>` },
+  { title:"Weak spots & saved progress", html:`
+      <h4>Most-missed (saved on this device)</h4>
+      <div id="weakList" class="weak-list"><span class="none">No misses recorded yet — go get some wrong. 😄</span></div>
+      <div class="row"><button id="resetStats" class="linkbtn">Reset all saved stats</button></div>` },
+];
+
+const shell = Trainer.shell.mount({
+  mountEl: $("app"),
+  title: "Note Finder", subtitle: "hands free",
+  settingsSections,
+});
+
+// ---- piano + MIDI ----
+const piano = Trainer.piano.create($("piano"), {
+  labels: state.opts.labels, sound: state.opts.sound,
+  onNoteOn(n){ evaluatePlay(n); },
+});
+Trainer.midi.init({
+  onNoteOn: n=> piano.noteOn(n),
+  onNoteOff: n=> piano.noteOff(n),
+  selectEl: shell.midiSelectEl, statusEl: shell.statusEl, helpEl: shell.helpEl,
+});
+
+// ---- selection (weak-spot weighted) ----
+function pickPc(){
+  const pcs = poolPcs();
+  if (!state.weakFocus) return pcs[Math.floor(Math.random()*pcs.length)];
+  const weights = pcs.map(pc => store.weightFor(String(pc)));
+  let sum = weights.reduce((a,b)=>a+b,0), r = Math.random()*sum;
+  for (let i=0;i<pcs.length;i++){ r -= weights[i]; if (r<=0) return pcs[i]; }
+  return pcs[pcs.length-1];
+}
+function midiForPc(pc){
+  // pick a concrete key of this pc within the on-screen range
+  const opts = [];
+  for (let m=48; m<=84; m++) if (m%12===pc) opts.push(m);
+  return opts[Math.floor(Math.random()*opts.length)];
+}
+function pickRandom(){
+  const pc = pickPc();
+  const needMidi = state.mode==="name" || state.exactOctave;
+  state.current = { pc, midi: needMidi ? midiForPc(pc) : null };
+  state.answered = false; state.wrongTries = 0;
+  piano.clear();
+  render();
+}
+
+// ---- render ----
+function render(){
+  const c = state.current;
+  const promptEl = $("prompt"), ans = $("answers");
+  $("feedback").textContent = ""; $("feedback").className = "feedback";
+  $("tries").textContent = "";
+  if (!c){ promptEl.innerHTML = '<span class="root">—</span>'; return; }
+
+  if (state.mode === "name"){
+    $("eyebrow").textContent = "Name this note";
+    promptEl.innerHTML = '<span class="qual">🎧 Which note is lit?</span>';
+    $("hint").innerHTML = "Tap its name below";
+    ans.style.display = "flex";
+    piano.highlight([c.pc]);
+  } else {
+    $("eyebrow").textContent = "Find this note";
+    const label = pcName(c.pc) + (state.exactOctave ? octaveOf(c.midi) : "");
+    promptEl.innerHTML = `<span class="root">${label}</span>`;
+    $("hint").innerHTML = state.exactOctave
+      ? "Play this <b>exact</b> key"
+      : "Play this note in <b>any</b> octave";
+    ans.style.display = "none";
+    piano.clearHighlight();
+  }
+  promptEl.classList.remove("pop"); void promptEl.offsetWidth; promptEl.classList.add("pop");
+}
+
+function reveal(){
+  const c = state.current; if (!c) return;
+  if (state.mode === "find") piano.highlight([c.pc]);
+  $("tries").textContent = `Answer: ${pcName(c.pc)}${state.exactOctave && c.midi!=null ? octaveOf(c.midi) : ""}`;
+}
+
+// ---- scoring ----
+function score(ok, playedLabel){
+  const c = state.current; if (!c || state.answered) return;
+  store.total++;
+  if (ok){
+    state.answered = true;
+    store.correct++; state.streak++;
+    if (state.streak > store.best) store.best = state.streak;
+    setFeedback("✅ Correct!", "good");
+    if (state.mode === "find") piano.highlight([c.pc]);
+    updateStats(); store.save();
+    setTimeout(pickRandom, 750);
+  } else {
+    state.streak = 0; state.wrongTries++;
+    store.bumpMiss(String(c.pc));
+    setFeedback(`❌ That's ${playedLabel} — try again`, "bad");
+    updateStats(); store.save(); renderWeakList();
+    if (state.mode === "find") piano.clear();
+    const left = REVEAL_AFTER - state.wrongTries;
+    if (left > 0) $("tries").textContent = `${state.wrongTries} wrong · answer reveals after ${REVEAL_AFTER}`;
+    if (state.wrongTries >= REVEAL_AFTER) reveal();
+  }
+}
+
+// find mode: evaluate the key just played
+function evaluatePlay(n){
+  if (state.mode !== "find" || state.answered || !state.current) return;
+  const c = state.current;
+  const ok = state.exactOctave ? (n === c.midi) : (n%12 === c.pc);
+  const label = pcName(n%12) + (state.exactOctave ? octaveOf(n) : "");
+  score(ok, label);
+}
+// name mode: evaluate the tapped chip
+function answerName(pc){
+  if (state.mode !== "name" || state.answered || !state.current) return;
+  score(pc === state.current.pc, pcName(pc));
+}
+
+function setFeedback(msg, cls){ const el=$("feedback"); el.textContent=msg; el.className="feedback "+(cls||""); }
+function updateStats(){
+  $("streak").textContent = state.streak;
+  $("best").textContent = store.best;
+  $("correct").textContent = store.correct;
+  $("total").textContent = store.total;
+  $("acc").textContent = store.total ? Math.round(store.correct/store.total*100)+"%" : "—";
+}
+
+// ---- audio prompt ----
+function hearTarget(){
+  const c = state.current; if (!c) return;
+  Trainer.audio.playNote(c.midi != null ? c.midi : 60 + c.pc, 900);
+}
+
+// ---- answer chips (name mode) ----
+function buildAnswers(){
+  const ans = $("answers"); ans.innerHTML = "";
+  poolPcs().forEach(pc=>{
+    const chip = document.createElement("div");
+    chip.className = "chip"; chip.textContent = pcName(pc);
+    chip.onclick = ()=> answerName(pc);
+    ans.appendChild(chip);
+  });
+}
+
+// ---- weak list ----
+function renderWeakList(){
+  const el = $("weakList");
+  const entries = Object.entries(store.misses).filter(([,n])=>n>0).sort((a,b)=>b[1]-a[1]).slice(0,12);
+  if (!entries.length){ el.innerHTML='<span class="none">No misses recorded yet — go get some wrong. 😄</span>'; return; }
+  el.innerHTML = entries.map(([k,n])=> `• <b style="color:var(--text)">${keyLabel(k)}</b> — missed ${n}×`).join("<br>");
+}
+
+// ---- controls & settings wiring ----
+$("hearBtn").onclick = hearTarget;
+$("revealBtn").onclick = reveal;
+$("skipBtn").onclick = ()=>{ state.streak=0; updateStats(); pickRandom(); };
+
+$("modeSeg").addEventListener("click", e=>{
+  const b=e.target.closest("button"); if(!b) return;
+  state.mode=b.dataset.mode;
+  document.querySelectorAll("#modeSeg button").forEach(x=>x.classList.toggle("on", x===b));
+  pickRandom();
+});
+$("spellSeg").addEventListener("click", e=>{
+  const b=e.target.closest("button"); if(!b) return;
+  state.spelling=b.dataset.spell;
+  document.querySelectorAll("#spellSeg button").forEach(x=>x.classList.toggle("on", x===b));
+  buildAnswers(); renderWeakList(); render();
+});
+$("accidentals").onchange = e=>{ state.accidentals=e.target.checked; buildAnswers(); pickRandom(); };
+$("exactOctave").onchange = e=>{ state.exactOctave=e.target.checked; pickRandom(); };
+$("weakFocus").onchange = e=> state.weakFocus=e.target.checked;
+$("labels").onchange = e=>{ state.opts.labels=e.target.checked; piano.setLabels(e.target.checked); };
+$("sound").onchange = e=>{ state.opts.sound=e.target.checked; piano.setSound(e.target.checked); };
+$("instSel").onchange = e=>{ state.instrument=e.target.value; Trainer.audio.ac().resume(); Trainer.audio.loadInstrument(state.instrument, setSoundNote); };
+$("resetStats").onclick = ()=>{
+  if (!confirm("Reset streak, accuracy, and weak-spot history?")) return;
+  store.resetAll(); state.streak=0; updateStats(); renderWeakList();
+};
+document.addEventListener("keydown", e=>{
+  if (shell.isSettingsOpen()) return;
+  if (e.key==="Enter") pickRandom();
+});
+
+function setSoundNote(t){ const el=$("soundNote"); if(el) el.textContent=t; }
+
+// ---- init ----
+buildAnswers();
+renderWeakList();
+updateStats();
+Trainer.audio.loadInstrument(state.instrument, setSoundNote);
+pickRandom();
+</script>
+</body>
+</html>

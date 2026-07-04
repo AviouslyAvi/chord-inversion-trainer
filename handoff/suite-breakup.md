@@ -20,11 +20,11 @@ Reusable internals confirmed in the current `index.html`:
 | Batch | Scope | Items | Depends on | Status |
 |---|---|---|---|---|
 | **0** | Shared foundation + landing hub | Extract theory/audio/piano/MIDI/store/CSS into `shared/*`; build `index.html` hub; move trainer stub | — | ✅ DONE (on master `90d7d6a`) |
-| **1** | Chord Identification | keyboard-chord + ear-chord | Batch 0 | ⬜ ready to build |
-| **2** | Interval Trainer | keyboard-interval + ear-interval | Batch 0 | ⬜ ready to build |
-| **3** | Scale Identification | keyboard-scale | Batch 0 | ⬜ ready to build |
-| **4** | Ear: Melody / Keyboard playback | ear-keyboard | Batch 0 | ⬜ ready to build |
-| **5** | Note Finder (reverse) | keyboard-reverse | Batch 0 | ⬜ ready to build |
+| **1** | Chord Identification | keyboard-chord + ear-chord | Batch 0 | ✅ DONE (`exercises/chord-id.html`) |
+| **2** | Interval Trainer | keyboard-interval + ear-interval | Batch 0 | ✅ DONE (`exercises/interval.html`) |
+| **3** | Scale Identification | keyboard-scale | Batch 0 | ✅ DONE (`exercises/scale.html`) |
+| **4** | Ear: Melody / Keyboard playback | ear-keyboard | Batch 0 | ✅ DONE → `exercises/ear-melody.html` |
+| **5** | Note Finder (reverse) | keyboard-reverse | Batch 0 | ✅ DONE (`exercises/note-finder.html`) |
 | **6** | Port existing Chord Inversion Trainer | move into `exercises/` on shared foundation | Batch 0 | ✅ DONE (folded into Batch 0 → `exercises/chord-inversion.html`) |
 
 > **Foundation is live.** Batch 0 shipped `shared/theory.js`, `shared/audio.js`,

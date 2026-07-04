@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#07080c" />
+<meta name="description" content="Hands-free scale &amp; mode trainer for MIDI keyboards — recognize scales by sight, or play them back ascending." />
+<title>Scale Identification</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="../shared/base.css" />
+</head>
+<body>
+<div class="wrap" id="app">
+  <!-- Trainer.shell injects the topbar + MIDI help banner here -->
+
+  <div class="hero">
+    <div id="eyebrow" class="eyebrow">Name this scale</div>
+    <div id="scaleName" class="chord-name"><span class="root">—</span></div>
+    <div id="bassline" class="bassline"></div>
+    <div id="answers" class="chips answers"></div>
+    <div id="promptNotes" class="prompt-notes"></div>
+    <div id="tries" class="tries"></div>
+    <div id="feedback" class="feedback"></div>
+    <div id="liveRead" class="liveread"></div>
+    <div id="timerbar" class="timerbar"></div>
+  </div>
+
+  <div class="controls">
+    <button id="hearBtn" class="playbtn" aria-label="Hear it" title="Hear it"><span class="tri">▶</span></button>
+    <button id="skipBtn" class="secondary">Skip ⏭</button>
+    <button id="revealBtn" class="secondary">Reveal</button>
+  </div>
+
+  <div class="piano-wrap"><div id="piano" class="piano"></div></div>
+
+  <div class="stats-row">
+    <div class="stats">
+      <div class="stat"><div id="streak" class="n">0</div><div class="l">Streak</div></div>
+      <div class="stat"><div id="best" class="n">0</div><div class="l">Best</div></div>
+      <div class="stat"><div id="correct" class="n">0</div><div class="l">Correct</div></div>
+      <div class="stat"><div id="total" class="n">0</div><div class="l">Attempts</div></div>
+      <div class="stat"><div id="acc" class="n">—</div><div class="l">Accuracy</div></div>
+    </div>
+  </div>
+</div>
+
+<script src="../shared/theory.js"></script>
+<script src="../shared/audio.js"></script>
+<script src="../shared/piano.js"></script>
+<script src="../shared/midi.js"></script>
+<script src="../shared/store.js"></script>
+<script src="../shared/shell.js"></script>
+<script>
+"use strict";
+const T = Trainer.theory;
+const { SCALE_TYPES, NOTE_NAMES, ROOTS, scaleMidi } = T;
+const REVEAL_AFTER = 3;
+const NATURALS = [0,2,4,5,7,9,11];
+
+const store = Trainer.store.open("scale");
+
+const state = {
+  types: new Set(Object.keys(SCALE_TYPES)),
+  roots: new Set(NATURALS),
+  current: null,
+  streak: 0,
+  answered: false,
+  wrongTries: 0,
+  played: [],              // pitch classes played so far, in order (PLAY mode)
+  mode: "see",             // "see" | "play"
+  weakFocus: true,
+  opts: { autoHear:false, labels:true, sound:true },
+  instrument: "piano",
+};
+
+function scaleKeyId(c){ return c.rootPc+":"+c.scaleKey; }
+function keyLabel(k){ const [r,s] = k.split(":"); return NOTE_NAMES[+r]+" "+SCALE_TYPES[s].label; }
+
+// ---- settings sections (rendered inside the shared modal) ----
+const settingsSections = [
+  { title:"Mode", html:`
+      <div class="row">
+        <div class="seg" id="modeSeg">
+          <button data-mode="see" class="on">See &amp; name</button>
+          <button data-mode="play">Play it back</button>
+        </div>
+      </div>
+      <p style="color:var(--muted);font-size:13px;margin-top:10px;line-height:1.5;">
+        <b>See &amp; name:</b> the scale is highlighted from its root — tap the scale name.<br>
+        <b>Play it back:</b> you're given a scale name — play it ascending on the keyboard (any octave).</p>` },
+  { title:"Scale types", html:`<div id="typeChips" class="chips"></div>` },
+  { title:"Root notes", html:`
+      <div id="rootChips" class="chips"></div>
+      <div class="row"><button id="rootsNat" class="linkbtn" style="color:var(--accent)">Naturals only</button>
+        <button id="rootsAll" class="linkbtn" style="color:var(--accent)">All 12</button></div>` },
+  { title:"Focus & audio", html:`
+      <h4>Weak-spot focus</h4>
+      <div class="switch-list">
+        <label class="switch"><input type="checkbox" id="weakFocus" checked /><span class="track"></span><span class="txt">Show my most-missed scales more often</span></label>
+      </div>
+      <h4>Audio & display</h4>
+      <div class="switch-list">
+        <label class="switch"><input type="checkbox" id="autoHear" /><span class="track"></span><span class="txt">Auto-play the scale on each new prompt</span></label>
+        <label class="switch"><input type="checkbox" id="labels" checked /><span class="track"></span><span class="txt">Note labels on keys</span></label>
+        <label class="switch"><input type="checkbox" id="sound" checked /><span class="track"></span><span class="txt">Sound when I play</span></label>
+      </div>
+      <div class="row">
+        <label>Instrument:
+          <select id="instSel">
+            <option value="piano">Acoustic Piano</option>
+            <option value="epiano">Electric Piano</option>
+            <option value="organ">Organ</option>
+            <option value="synth">Synth</option>
+          </select>
+        </label>
+        <span id="soundNote" style="color:var(--muted);font-size:12px;">loading piano…</span>
+      </div>` },
+  { title:"Weak spots & saved progress", html:`
+      <h4>Most-missed (saved on this device)</h4>
+      <div id="weakList" class="weak-list"><span class="none">No misses recorded yet — go get some wrong. 😄</span></div>
+      <div class="row"><button id="resetStats" class="linkbtn">Reset all saved stats</button></div>` },
+];
+
+const shell = Trainer.shell.mount({
+  mountEl: document.getElementById("app"),
+  title: "Scale Identification", subtitle: "hands free",
+  settingsSections,
+});
+
+// ---- piano + MIDI ----
+const piano = Trainer.piano.create(document.getElementById("piano"), {
+  labels: state.opts.labels, sound: state.opts.sound,
+  onNoteOn(n){ if (state.mode === "play"){ state.played.push(n%12); evaluatePlay(); } },
+  onNoteOff(){},
+});
+Trainer.midi.init({
+  onNoteOn: n=> piano.noteOn(n),
+  onNoteOff: n=> piano.noteOff(n),
+  selectEl: shell.midiSelectEl, statusEl: shell.statusEl, helpEl: shell.helpEl,
+});
+
+// ---- selection (weak-spot weighted) ----
+function allCandidates(){
+  const out = [];
+  for (const s of state.types)
+    for (const r of state.roots) out.push({rootPc:r, scaleKey:s});
+  return out;
+}
+function pickRandom(){
+  const cands = allCandidates();
+  if (!cands.length) return;
+  let chosen;
+  if (state.weakFocus){
+    const weights = cands.map(c => store.weightFor(scaleKeyId(c)));
+    let sum = weights.reduce((a,b)=>a+b,0), r = Math.random()*sum;
+    for (let i=0;i<cands.length;i++){ r -= weights[i]; if (r<=0){ chosen = cands[i]; break; } }
+    if (!chosen) chosen = cands[cands.length-1];
+  } else {
+    chosen = cands[Math.floor(Math.random()*cands.length)];
+  }
+  chosen.targetPcs = scaleMidi(chosen.rootPc, chosen.scaleKey, 60).map(m=>m%12); // ordered from tonic
+  state.current = chosen;
+  piano.clear();
+  state.answered = false; state.wrongTries = 0; state.played = [];
+  render();
+  if (state.opts.autoHear) setTimeout(hearScale, 300);
+}
+
+// ---- render ----
+function render(){
+  const c = state.current;
+  const nameEl = document.getElementById("scaleName");
+  const answersEl = document.getElementById("answers");
+  const notesEl = document.getElementById("promptNotes");
+  if (!c){ nameEl.innerHTML = '<span class="root">—</span>'; return; }
+
+  document.getElementById("eyebrow").textContent = state.mode === "see" ? "Name this scale" : "Play this scale";
+  notesEl.className = "prompt-notes"; notesEl.textContent = "";
+  setFeedback("", "");
+  document.getElementById("liveRead").textContent = "";
+  document.getElementById("tries").textContent = "";
+
+  if (state.mode === "see"){
+    nameEl.innerHTML = `<span class="root">${NOTE_NAMES[c.rootPc]}</span> <span class="qual">scale</span>`;
+    document.getElementById("bassline").innerHTML = `These keys, ascending from <b>${NOTE_NAMES[c.rootPc]}</b> — which scale is it?`;
+    piano.highlight(c.targetPcs);
+    buildAnswers();
+    answersEl.style.display = "flex";
+  } else {
+    nameEl.innerHTML = `<span class="root">${NOTE_NAMES[c.rootPc]}</span> <span class="qual">${SCALE_TYPES[c.scaleKey].label}</span>`;
+    document.getElementById("bassline").innerHTML = `Play it ascending from <b>${NOTE_NAMES[c.rootPc]}</b> — any octave`;
+    answersEl.innerHTML = ""; answersEl.style.display = "none";
+    piano.clearHighlight();
+  }
+  nameEl.classList.remove("pop"); void nameEl.offsetWidth; nameEl.classList.add("pop");
+}
+
+function buildAnswers(){
+  const el = document.getElementById("answers");
+  el.innerHTML = "";
+  [...state.types].forEach(k=>{
+    const chip = document.createElement("div");
+    chip.className = "chip"; chip.textContent = SCALE_TYPES[k].label;
+    chip.dataset.k = k;
+    chip.onclick = ()=> answerSee(k, chip);
+    el.appendChild(chip);
+  });
+}
+
+function reveal(){
+  const c = state.current; if (!c) return;
+  const notesEl = document.getElementById("promptNotes");
+  notesEl.className = "prompt-notes reveal";
+  notesEl.textContent = c.targetPcs.map(p=>NOTE_NAMES[p]).join(" – ") + "  (ascending)";
+  piano.highlight(c.targetPcs);
+  if (state.mode === "see"){
+    document.querySelectorAll("#answers .chip").forEach(ch=>{
+      if (ch.dataset.k === c.scaleKey) ch.classList.add("on");
+    });
+  }
+}
+
+// ---- evaluate: SEE mode (tap a name) ----
+function answerSee(k, chipEl){
+  const c = state.current;
+  if (!c || state.answered) return;
+  store.total++;
+  if (k === c.scaleKey){
+    state.answered = true;
+    store.correct++; state.streak++;
+    if (state.streak > store.best) store.best = state.streak;
+    chipEl.classList.add("on");
+    setFeedback(`✅ ${NOTE_NAMES[c.rootPc]} ${SCALE_TYPES[c.scaleKey].label}`, "good");
+    updateStats(); store.save();
+    setTimeout(pickRandom, 850);
+  } else {
+    state.streak = 0; state.wrongTries++;
+    store.bumpMiss(scaleKeyId(c));
+    chipEl.classList.add("wrong");
+    setTimeout(()=>chipEl.classList.remove("wrong"), 450);
+    updateStats(); store.save(); renderWeakList();
+    setFeedback(`❌ Not ${SCALE_TYPES[k].label} — try again`, "bad");
+    const left = REVEAL_AFTER - state.wrongTries;
+    document.getElementById("tries").textContent = left > 0 ? `${state.wrongTries} wrong · answer reveals after ${REVEAL_AFTER}` : "";
+    if (state.wrongTries >= REVEAL_AFTER){ state.answered = true; reveal(); setFeedback(`It's ${SCALE_TYPES[c.scaleKey].label}`, "bad"); setTimeout(pickRandom, 1600); }
+  }
+}
+
+// ---- evaluate: PLAY mode (play the scale ascending) ----
+function evaluatePlay(){
+  const c = state.current;
+  if (!c || state.answered) return;
+  const target = c.targetPcs;
+  const played = state.played;
+  const i = played.length - 1;
+
+  // live readout of what's been played
+  const live = document.getElementById("liveRead");
+  live.innerHTML = "So far: <b>" + played.map(p=>NOTE_NAMES[p]).join(" ") + "</b>";
+  live.className = "liveread match";
+
+  if (played[i] !== target[i]){
+    // wrong note in the sequence
+    state.streak = 0; state.wrongTries++;
+    store.total++; store.bumpMiss(scaleKeyId(c));
+    updateStats(); store.save(); renderWeakList();
+    setFeedback(`❌ ${NOTE_NAMES[played[i]]} isn't next — restarting`, "bad");
+    live.className = "liveread";
+    state.played = [];
+    piano.clear();
+    const leftT = REVEAL_AFTER - state.wrongTries;
+    document.getElementById("tries").textContent = leftT > 0 ? `${state.wrongTries} wrong · notes reveal after ${REVEAL_AFTER}` : "";
+    if (state.wrongTries >= REVEAL_AFTER) reveal();
+    return;
+  }
+  if (played.length === target.length){
+    // full scale played correctly
+    state.answered = true;
+    store.total++; store.correct++; state.streak++;
+    if (state.streak > store.best) store.best = state.streak;
+    setFeedback(`✅ ${NOTE_NAMES[c.rootPc]} ${SCALE_TYPES[c.scaleKey].label}!`, "good");
+    piano.highlight(target);
+    updateStats(); store.save();
+    setTimeout(pickRandom, 950);
+  }
+}
+
+function setFeedback(msg, cls){ const el=document.getElementById("feedback"); el.textContent=msg; el.className="feedback "+(cls||""); }
+function updateStats(){
+  document.getElementById("streak").textContent = state.streak;
+  document.getElementById("best").textContent = store.best;
+  document.getElementById("correct").textContent = store.correct;
+  document.getElementById("total").textContent = store.total;
+  document.getElementById("acc").textContent = store.total ? Math.round(store.correct/store.total*100)+"%" : "—";
+}
+
+// ---- audio prompt ----
+function hearScale(){
+  const c = state.current; if(!c) return;
+  const notes = scaleMidi(c.rootPc, c.scaleKey, 60);
+  Trainer.audio.playNotes(notes.concat(notes[0]+12), { stagger:340, durMs:420 });
+}
+
+// ---- weak list ----
+function renderWeakList(){
+  const el = document.getElementById("weakList");
+  const entries = Object.entries(store.misses).filter(([,n])=>n>0).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  if (!entries.length){ el.innerHTML='<span class="none">No misses recorded yet — go get some wrong. 😄</span>'; return; }
+  el.innerHTML = entries.map(([k,n])=> `• <b style="color:var(--text)">${keyLabel(k)}</b> — missed ${n}×`).join("<br>");
+}
+
+// ---- settings chips + controls ----
+function buildChips(){
+  const tc = document.getElementById("typeChips");
+  Object.entries(SCALE_TYPES).forEach(([k,v])=>{
+    const c=document.createElement("div"); c.className="chip on"; c.textContent=v.label;
+    c.onclick=()=>{ toggle(state.types,k); c.classList.toggle("on"); ensureNonEmpty(); };
+    tc.appendChild(c);
+  });
+  const rc = document.getElementById("rootChips");
+  ROOTS.forEach(r=>{
+    const c=document.createElement("div"); c.className="chip"+(state.roots.has(r)?" on":""); c.textContent=NOTE_NAMES[r];
+    c.dataset.r = r;
+    c.onclick=()=>{ toggle(state.roots,r); c.classList.toggle("on"); ensureNonEmpty(); };
+    rc.appendChild(c);
+  });
+}
+function toggle(set,v){ set.has(v)?set.delete(v):set.add(v); }
+function ensureNonEmpty(){
+  if (state.types.size===0){ const k=Object.keys(SCALE_TYPES)[0]; state.types.add(k); document.querySelector(`#typeChips .chip`).classList.add("on"); }
+  if (state.roots.size===0){ state.roots.add(0); document.querySelector('#rootChips .chip[data-r="0"]').classList.add("on"); }
+}
+function syncRootChips(){
+  document.querySelectorAll("#rootChips .chip").forEach(ch=> ch.classList.toggle("on", state.roots.has(+ch.dataset.r)));
+}
+
+document.getElementById("hearBtn").onclick = hearScale;
+document.getElementById("revealBtn").onclick = reveal;
+document.getElementById("skipBtn").onclick = ()=>{ state.streak=0; updateStats(); pickRandom(); };
+document.getElementById("autoHear").onchange = e=> state.opts.autoHear=e.target.checked;
+document.getElementById("labels").onchange = e=>{ state.opts.labels=e.target.checked; piano.setLabels(e.target.checked); };
+document.getElementById("sound").onchange = e=>{ state.opts.sound=e.target.checked; piano.setSound(e.target.checked); };
+document.getElementById("instSel").onchange = e=>{ state.instrument=e.target.value; Trainer.audio.ac().resume(); Trainer.audio.loadInstrument(state.instrument, setSoundNote); };
+document.getElementById("weakFocus").onchange = e=> state.weakFocus=e.target.checked;
+document.getElementById("rootsNat").onclick = ()=>{ state.roots=new Set(NATURALS); syncRootChips(); };
+document.getElementById("rootsAll").onclick = ()=>{ state.roots=new Set(ROOTS); syncRootChips(); };
+document.getElementById("modeSeg").addEventListener("click", e=>{
+  const b=e.target.closest("button"); if(!b) return;
+  state.mode=b.dataset.mode;
+  document.querySelectorAll("#modeSeg button").forEach(x=>x.classList.toggle("on", x===b));
+  pickRandom();
+});
+document.getElementById("resetStats").onclick = ()=>{
+  if (!confirm("Reset streak, accuracy, and weak-spot history?")) return;
+  store.resetAll(); state.streak=0; updateStats(); renderWeakList();
+};
+document.addEventListener("keydown", e=>{
+  if (shell.isSettingsOpen()) return;
+  if (e.key==="Enter") pickRandom();
+});
+
+function setSoundNote(t){ const el=document.getElementById("soundNote"); if(el) el.textContent=t; }
+
+// ---- init ----
+buildChips();
+renderWeakList();
+updateStats();
+Trainer.audio.loadInstrument(state.instrument, setSoundNote);
+pickRandom();
+</script>
+</body>
+</html>

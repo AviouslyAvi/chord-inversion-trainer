@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#07080c" />
+<meta name="description" content="Ear-training melody playback — hear a short melodic sequence, then play it back in order on your MIDI keyboard." />
+<title>Ear: Melody Playback</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="../shared/base.css" />
+</head>
+<body>
+<div class="wrap" id="app">
+  <!-- Trainer.shell injects the topbar + MIDI help banner here -->
+
+  <div class="hero">
+    <div class="eyebrow">Play back what you hear</div>
+    <div id="prompt" class="chord-name"><span class="qual">🎧 Listen…</span></div>
+    <div id="seqDots" class="seq-dots"></div>
+    <div id="promptNotes" class="prompt-notes"></div>
+    <div id="tries" class="tries"></div>
+    <div id="feedback" class="feedback"></div>
+    <div id="liveRead" class="liveread"></div>
+    <div id="timerbar" class="timerbar"></div>
+  </div>
+
+  <div class="controls">
+    <button id="hearBtn" class="playbtn" aria-label="Replay melody" title="Replay melody"><span class="tri">▶</span></button>
+    <button id="skipBtn" class="secondary">Skip ⏭</button>
+    <button id="revealBtn" class="secondary">Reveal notes</button>
+  </div>
+
+  <div class="piano-wrap"><div id="piano" class="piano"></div></div>
+
+  <div class="stats-row">
+    <div class="stats">
+      <div class="stat"><div id="streak" class="n">0</div><div class="l">Streak</div></div>
+      <div class="stat"><div id="best" class="n">0</div><div class="l">Best</div></div>
+      <div class="stat"><div id="correct" class="n">0</div><div class="l">Correct</div></div>
+      <div class="stat"><div id="total" class="n">0</div><div class="l">Attempts</div></div>
+      <div class="stat"><div id="acc" class="n">—</div><div class="l">Accuracy</div></div>
+    </div>
+  </div>
+</div>
+
+<script src="../shared/theory.js"></script>
+<script src="../shared/audio.js"></script>
+<script src="../shared/piano.js"></script>
+<script src="../shared/midi.js"></script>
+<script src="../shared/store.js"></script>
+<script src="../shared/shell.js"></script>
+<script>
+"use strict";
+const T = Trainer.theory;
+const { NOTE_NAMES, SCALE_TYPES, ROOTS, scaleMidi, noteName } = T;
+const REVEAL_AFTER = 3;
+const PIANO_LOW = 48, PIANO_HIGH = 84;
+
+const store = Trainer.store.open("ear-melody");
+
+const state = {
+  seqLen: 4,
+  rootPc: 0,
+  scaleKey: "major",
+  tempo: 450,          // stagger between prompt notes (ms)
+  exactOctave: false,  // false = accept any octave (pitch-class match)
+  weakFocus: true,
+  current: null,       // {notes:[midi], names:[]}
+  step: 0,             // how many correct notes played so far this attempt
+  answered: false,
+  wrongTries: 0,
+  streak: 0,
+  opts: { labels:true, sound:true },
+  instrument: "piano",
+};
+
+// weak-spot key = the pitch class the learner had to produce
+function pcKey(midi){ return "pc:" + (((midi%12)+12)%12); }
+function pcKeyLabel(k){ return NOTE_NAMES[+k.split(":")[1]]; }
+
+// ---- settings sections (rendered inside the shared modal) ----
+const settingsSections = [
+  { title:"Melody", html:`
+      <h4>Sequence length</h4>
+      <div class="row">
+        <label>Notes per melody:
+          <select id="lenSel">
+            <option>2</option><option>3</option><option selected>4</option>
+            <option>5</option><option>6</option><option>7</option><option>8</option>
+          </select>
+        </label>
+      </div>
+      <h4>Note pool</h4>
+      <div class="row">
+        <label>Root:
+          <select id="rootSel"></select>
+        </label>
+        <label>Scale / pool:
+          <select id="scaleSel"></select>
+        </label>
+      </div>
+      <p style="color:var(--muted);font-size:12px;margin:6px 0 0;">Pick <b>Chromatic</b> for a free, any-note pool.</p>` },
+  { title:"Playback & matching", html:`
+      <h4>Tempo</h4>
+      <div class="row">
+        <div class="seg" id="tempoSeg">
+          <button data-t="600">Slow</button>
+          <button data-t="450" class="on">Medium</button>
+          <button data-t="300">Fast</button>
+        </div>
+      </div>
+      <h4>Matching</h4>
+      <div class="switch-list">
+        <label class="switch"><input type="checkbox" id="exactOctave" /><span class="track"></span><span class="txt">Exact octave — must match the register you heard (off = any octave is fine)</span></label>
+      </div>
+      <h4>Weak-spot focus</h4>
+      <div class="switch-list">
+        <label class="switch"><input type="checkbox" id="weakFocus" checked /><span class="track"></span><span class="txt">Feature my most-missed notes more often</span></label>
+      </div>
+      <h4>Audio & display</h4>
+      <div class="switch-list">
+        <label class="switch"><input type="checkbox" id="labels" checked /><span class="track"></span><span class="txt">Note labels on keys</span></label>
+        <label class="switch"><input type="checkbox" id="sound" checked /><span class="track"></span><span class="txt">Sound when I play</span></label>
+      </div>
+      <div class="row">
+        <label>Instrument:
+          <select id="instSel">
+            <option value="piano">Acoustic Piano</option>
+            <option value="epiano">Electric Piano</option>
+            <option value="organ">Organ</option>
+            <option value="synth">Synth</option>
+          </select>
+        </label>
+        <span id="soundNote" style="color:var(--muted);font-size:12px;">loading piano…</span>
+      </div>` },
+  { title:"Weak spots & saved progress", html:`
+      <h4>Most-missed notes (saved on this device)</h4>
+      <div id="weakList" class="weak-list"><span class="none">No misses recorded yet — go get some wrong. 😄</span></div>
+      <div class="row"><button id="resetStats" class="linkbtn">Reset all saved stats</button></div>` },
+];
+
+const shell = Trainer.shell.mount({
+  mountEl: document.getElementById("app"),
+  title: "Ear: Melody Playback", subtitle: "hands free",
+  settingsSections,
+});
+
+// ---- piano + MIDI ----
+// Each fresh key-press = one melody step. We auto-release shortly after so a
+// repeated note can be played again and the input stays momentary.
+const piano = Trainer.piano.create(document.getElementById("piano"), {
+  labels: state.opts.labels, sound: state.opts.sound,
+  lowMidi: PIANO_LOW, highMidi: PIANO_HIGH,
+  onNoteOn(n){ handlePlay(n); setTimeout(()=>piano.noteOff(n), 260); },
+  onNoteOff(){},
+});
+Trainer.midi.init({
+  onNoteOn: n=> piano.noteOn(n),
+  onNoteOff: n=> piano.noteOff(n),
+  selectEl: shell.midiSelectEl, statusEl: shell.statusEl, helpEl: shell.helpEl,
+});
+
+// ---- note pool (weak-spot weighted) ----
+function buildPool(){
+  // two octaves of the chosen scale from C4, clamped to the visible keyboard
+  const set = new Set();
+  [60, 72].forEach(base => scaleMidi(state.rootPc, state.scaleKey, base).forEach(m=>set.add(m)));
+  return [...set].filter(m => m>=PIANO_LOW && m<=PIANO_HIGH).sort((a,b)=>a-b);
+}
+function pickNote(pool, prev){
+  let choices = pool;
+  if (prev != null) choices = pool.filter(m => m !== prev);   // avoid immediate repeats
+  if (!choices.length) choices = pool;
+  if (state.weakFocus){
+    const weights = choices.map(m => store.weightFor(pcKey(m)));
+    let sum = weights.reduce((a,b)=>a+b,0), r = Math.random()*sum;
+    for (let i=0;i<choices.length;i++){ r -= weights[i]; if (r<=0) return choices[i]; }
+    return choices[choices.length-1];
+  }
+  return choices[Math.floor(Math.random()*choices.length)];
+}
+function pickRandom(){
+  const pool = buildPool();
+  if (!pool.length) return;
+  const notes = [];
+  let prev = null;
+  for (let i=0;i<state.seqLen;i++){ const n = pickNote(pool, prev); notes.push(n); prev = n; }
+  state.current = { notes, names: notes.map(m=>noteName(m)) };
+  state.step = 0; state.answered = false; state.wrongTries = 0;
+  piano.clear(); piano.clearHighlight();
+  render();
+  setTimeout(hearTarget, 350);   // ear training: always play the prompt
+}
+
+// ---- render ----
+function render(){
+  const promptEl = document.getElementById("prompt");
+  promptEl.innerHTML = '<span class="qual">🎧 Listen…</span>';
+  promptEl.classList.remove("pop"); void promptEl.offsetWidth; promptEl.classList.add("pop");
+  const notesEl = document.getElementById("promptNotes");
+  notesEl.className = "prompt-notes"; notesEl.textContent = "";
+  document.getElementById("feedback").textContent = ""; document.getElementById("feedback").className = "feedback";
+  document.getElementById("liveRead").textContent = "";
+  document.getElementById("tries").textContent = "";
+  renderDots();
+}
+function renderDots(){
+  const el = document.getElementById("seqDots");
+  const c = state.current; if (!c){ el.innerHTML = ""; return; }
+  el.innerHTML = c.notes.map((_,i)=>{
+    const cls = i < state.step ? "dot done" : "dot";
+    return `<span class="${cls}"></span>`;
+  }).join("");
+}
+function reveal(){
+  const c = state.current; if (!c) return;
+  const notesEl = document.getElementById("promptNotes");
+  notesEl.className = "prompt-notes reveal";
+  notesEl.textContent = c.names.join(" – ") + "  (in order)";
+  piano.highlight(c.notes);   // pitch classes light up
+}
+
+// ---- evaluate (step by step) ----
+function handlePlay(n){
+  const c = state.current;
+  if (!c || state.answered) return;
+  const expected = c.notes[state.step];
+  const ok = state.exactOctave ? (n === expected) : (n%12 === expected%12);
+
+  const liveEl = document.getElementById("liveRead");
+  liveEl.innerHTML = `You played: <b>${noteName(n)}</b>`;
+  liveEl.className = "liveread";
+
+  if (ok){
+    state.step++;
+    renderDots();
+    if (state.step >= c.notes.length){
+      // whole melody correct
+      state.answered = true;
+      store.correct++; store.total++; state.streak++;
+      if (state.streak > store.best) store.best = state.streak;
+      setFeedback(`✅ ${c.names.join(" – ")}`, "good");
+      liveEl.className = "liveread match"; liveEl.innerHTML = "";
+      updateStats(); store.save();
+      setTimeout(pickRandom, 900);
+    } else {
+      setFeedback(`✅ ${state.step}/${c.notes.length}…`, "good");
+    }
+  } else {
+    // wrong note = failed attempt; restart the melody input
+    state.streak = 0; state.wrongTries++;
+    store.total++;
+    store.bumpMiss(pcKey(expected));
+    updateStats(); store.save(); renderWeakList();
+    setFeedback(`❌ ${noteName(n)} — expected note ${state.step+1}. Start over.`, "bad");
+    state.step = 0; renderDots();
+    const left = REVEAL_AFTER - state.wrongTries;
+    document.getElementById("tries").textContent =
+      left > 0 ? `${state.wrongTries} wrong · notes reveal after ${REVEAL_AFTER}` : "";
+    if (state.wrongTries >= REVEAL_AFTER) reveal();
+  }
+}
+function setFeedback(msg, cls){ const el=document.getElementById("feedback"); el.textContent=msg; el.className="feedback "+(cls||""); }
+function updateStats(){
+  document.getElementById("streak").textContent = state.streak;
+  document.getElementById("best").textContent = store.best;
+  document.getElementById("correct").textContent = store.correct;
+  document.getElementById("total").textContent = store.total;
+  document.getElementById("acc").textContent = store.total ? Math.round(store.correct/store.total*100)+"%" : "—";
+}
+
+// ---- audio prompt ----
+function hearTarget(){
+  const c = state.current; if(!c) return;
+  Trainer.audio.playNotes(c.notes, { stagger: state.tempo, durMs: Math.max(400, state.tempo+150) });
+}
+
+// ---- weak list ----
+function renderWeakList(){
+  const el = document.getElementById("weakList");
+  const entries = Object.entries(store.misses).filter(([,n])=>n>0).sort((a,b)=>b[1]-a[1]).slice(0,12);
+  if (!entries.length){ el.innerHTML='<span class="none">No misses recorded yet — go get some wrong. 😄</span>'; return; }
+  el.innerHTML = entries.map(([k,n])=> `• <b style="color:var(--text)">${pcKeyLabel(k)}</b> — missed ${n}×`).join("<br>");
+}
+
+// ---- settings controls ----
+function buildSelects(){
+  const rootSel = document.getElementById("rootSel");
+  ROOTS.forEach(r=>{ const o=document.createElement("option"); o.value=r; o.textContent=NOTE_NAMES[r]; rootSel.appendChild(o); });
+  rootSel.value = state.rootPc;
+  const scaleSel = document.getElementById("scaleSel");
+  Object.entries(SCALE_TYPES).forEach(([k,v])=>{ const o=document.createElement("option"); o.value=k; o.textContent=v.label; scaleSel.appendChild(o); });
+  scaleSel.value = state.scaleKey;
+}
+
+document.getElementById("hearBtn").onclick = hearTarget;
+document.getElementById("revealBtn").onclick = reveal;
+document.getElementById("skipBtn").onclick = ()=>{ state.streak=0; updateStats(); pickRandom(); };
+document.getElementById("lenSel").onchange = e=>{ state.seqLen=+e.target.value; pickRandom(); };
+document.getElementById("rootSel").onchange = e=>{ state.rootPc=+e.target.value; pickRandom(); };
+document.getElementById("scaleSel").onchange = e=>{ state.scaleKey=e.target.value; pickRandom(); };
+document.getElementById("exactOctave").onchange = e=>{ state.exactOctave=e.target.checked; };
+document.getElementById("weakFocus").onchange = e=> state.weakFocus=e.target.checked;
+document.getElementById("labels").onchange = e=>{ state.opts.labels=e.target.checked; piano.setLabels(e.target.checked); };
+document.getElementById("sound").onchange = e=>{ state.opts.sound=e.target.checked; piano.setSound(e.target.checked); };
+document.getElementById("instSel").onchange = e=>{ state.instrument=e.target.value; Trainer.audio.ac().resume(); Trainer.audio.loadInstrument(state.instrument, setSoundNote); };
+document.getElementById("tempoSeg").addEventListener("click", e=>{
+  const b=e.target.closest("button"); if(!b) return;
+  state.tempo=+b.dataset.t;
+  document.querySelectorAll("#tempoSeg button").forEach(x=>x.classList.toggle("on", x===b));
+});
+document.getElementById("resetStats").onclick = ()=>{
+  if (!confirm("Reset streak, accuracy, and weak-spot history?")) return;
+  store.resetAll(); state.streak=0; updateStats(); renderWeakList();
+};
+document.addEventListener("keydown", e=>{
+  if (shell.isSettingsOpen()) return;
+  if (e.key===" " || e.key==="Spacebar"){ e.preventDefault(); hearTarget(); }  // replay
+  else if (e.key==="Enter") pickRandom();                                       // next melody
+});
+
+function setSoundNote(t){ const el=document.getElementById("soundNote"); if(el) el.textContent=t; }
+
+// ---- init ----
+buildSelects();
+renderWeakList();
+updateStats();
+Trainer.audio.loadInstrument(state.instrument, setSoundNote);
+pickRandom();
+</script>
+</body>
+</html>
