@@ -175,6 +175,13 @@
   }
   button.secondary:hover { background: rgba(48, 54, 72, 0.7); box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 8px 20px -12px rgba(0,0,0,0.8); }
   button:active { transform: translateY(1px); }
+  /* primary play button — icon only */
+  .playbtn {
+    width: 52px; height: 52px; padding: 0; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 19px; line-height: 1;
+  }
+  .playbtn .tri { transform: translateX(1px); }
 
   /* ---- piano ---- */
   .piano-wrap {
@@ -217,31 +224,65 @@
   .key .lbl { position: absolute; bottom: 6px; left: 0; right: 0; text-align: center; font-size: 10px; font-family: var(--font-mono); color: #7b8290; pointer-events: none; }
   .key.black .lbl { color: #aab2c2; }
 
-  /* ---- stats ---- */
-  .stats { display: flex; gap: 12px; justify-content: center; margin-bottom: 22px; flex-wrap: wrap; }
+  /* ---- compact score bar ---- */
+  .stats {
+    display: inline-flex; gap: 0; margin: 0 auto 22px; flex-wrap: wrap;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 999px;
+    padding: 6px 4px; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    width: fit-content;
+  }
+  .stats-row { display: flex; justify-content: center; }
   .stat {
-    background: var(--panel); border: 1px solid var(--border); border-radius: 16px;
-    padding: 14px 22px; text-align: center; min-width: 96px;
-    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
-    transition: transform 0.2s var(--ease), border-color 0.2s;
+    padding: 4px 18px; text-align: center; position: relative;
   }
-  .stat:hover { transform: translateY(-3px); border-color: var(--border-strong); }
-  .stat .n { font-size: 28px; font-weight: 700; font-family: var(--font-display); letter-spacing: -0.02em;
+  .stat + .stat::before {
+    content: ""; position: absolute; left: 0; top: 18%; bottom: 18%; width: 1px; background: var(--border);
+  }
+  .stat .n { font-size: 20px; font-weight: 700; font-family: var(--font-display); letter-spacing: -0.02em; line-height: 1.1;
     background: linear-gradient(180deg, #fff, #c6ccdb); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
-  .stat .l { font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 1.4px; margin-top: 4px; }
+  .stat .l { font-size: 9.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 1.2px; margin-top: 2px; }
 
-  /* ---- settings: separate, collapsible ---- */
-  details.settings {
-    background: var(--panel); border: 1px solid var(--border); border-radius: 18px; margin-bottom: 12px;
-    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); overflow: hidden;
+  /* ---- gear icon button ---- */
+  .iconbtn {
+    background: var(--panel); border: 1px solid var(--border); color: var(--text);
+    width: 38px; height: 38px; padding: 0; border-radius: 12px; font-size: 18px; line-height: 1;
+    display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+    box-shadow: none; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    transition: transform 0.18s var(--ease), border-color 0.18s, background 0.2s;
   }
-  details.settings > summary { list-style: none; cursor: pointer; padding: 16px 20px; font-size: 14px; font-weight: 600; display: flex; align-items: center; justify-content: space-between; transition: background 0.2s; }
-  details.settings > summary:hover { background: rgba(255,255,255,0.03); }
-  details.settings > summary::-webkit-details-marker { display: none; }
-  details.settings > summary .chev { color: var(--muted); transition: transform .25s var(--ease); font-size: 18px; }
-  details.settings[open] > summary .chev { transform: rotate(90deg); }
-  .settings-body { padding: 4px 20px 20px; }
-  .settings-body h4 { margin: 16px 0 10px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1.4px; }
+  .iconbtn:hover { transform: translateY(-2px); background: var(--panel2); border-color: var(--border-strong); box-shadow: none; }
+
+  /* ---- settings modal (single overlay behind the gear) ---- */
+  .modal-backdrop {
+    position: fixed; inset: 0; z-index: 40; display: none;
+    background: rgba(4, 5, 9, 0.62); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    padding: 24px 16px calc(24px + env(safe-area-inset-bottom)); overflow-y: auto;
+  }
+  .modal-backdrop.open { display: block; animation: fade 0.2s var(--ease); }
+  @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+  .modal {
+    max-width: 640px; margin: 0 auto;
+    background: var(--panel-solid); border: 1px solid var(--border-strong); border-radius: var(--radius);
+    box-shadow: var(--shadow); animation: pop 0.35s var(--ease); overflow: hidden;
+  }
+  .modal-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 18px 22px; border-bottom: 1px solid var(--border);
+    font-family: var(--font-display); font-size: 17px; font-weight: 600; letter-spacing: -0.01em;
+    position: sticky; top: 0; background: var(--panel-solid); z-index: 1;
+  }
+  .modal-close {
+    background: var(--panel2); border: 1px solid var(--border); color: var(--muted);
+    width: 32px; height: 32px; padding: 0; border-radius: 9px; font-size: 18px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; box-shadow: none;
+  }
+  .modal-close:hover { transform: none; color: var(--text); box-shadow: none; }
+  .modal-body { padding: 6px 22px 24px; }
+  .modal-section { padding: 16px 0; border-bottom: 1px solid var(--border); }
+  .modal-section:last-child { border-bottom: none; }
+  .modal-section > .sec-title { font-family: var(--font-display); font-size: 14px; font-weight: 600; margin: 0 0 12px; }
+  .settings-body h4 { margin: 14px 0 10px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1.4px; }
+  .settings-body h4:first-child { margin-top: 0; }
   .chips { display: flex; flex-wrap: wrap; gap: 8px; }
   .chip {
     padding: 8px 14px; border-radius: 10px; background: var(--panel2); border: 1px solid var(--border);
@@ -257,6 +298,24 @@
   .row { display: flex; align-items: center; gap: 18px; font-size: 14px; margin-top: 12px; flex-wrap: wrap; }
   .row label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
   .row input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px; }
+  /* toggle switches (replace default checkboxes) */
+  .switch { display: flex; align-items: center; gap: 11px; cursor: pointer; }
+  .switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+  .switch .track {
+    flex: none; width: 42px; height: 24px; border-radius: 999px; position: relative;
+    background: var(--panel2); border: 1px solid var(--border);
+    transition: background 0.22s var(--ease), border-color 0.22s;
+  }
+  .switch .track::after {
+    content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%;
+    background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.45);
+    transition: transform 0.22s var(--ease);
+  }
+  .switch input:checked + .track { background: linear-gradient(135deg, var(--accent), #5a7bf0); border-color: transparent; box-shadow: 0 4px 14px -6px rgba(109,139,255,0.9); }
+  .switch input:checked + .track::after { transform: translateX(18px); }
+  .switch input:focus-visible + .track { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .switch .txt { font-size: 14px; line-height: 1.4; }
+  .switch-list { display: flex; flex-direction: column; gap: 14px; margin-top: 12px; }
   .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 11px; overflow: hidden; background: var(--panel2); }
   .seg button { background: transparent; color: var(--muted); border: none; border-radius: 0; padding: 9px 16px; font-size: 13px; box-shadow: none; }
   .seg button:hover { transform: none; color: var(--text); box-shadow: none; }
@@ -299,6 +358,7 @@
     <div style="display:flex;gap:8px;align-items:center;">
       <select id="midiSel" class="picker" title="MIDI input device"><option>MIDI: scanning…</option></select>
       <div id="status" class="status">Looking for MIDI…</div>
+      <button id="settingsBtn" class="iconbtn" title="Settings" aria-label="Settings">⚙️</button>
     </div>
   </div>
 
@@ -318,86 +378,92 @@
   </div>
 
   <div class="controls">
-    <button id="hearBtn">🔊 Hear it</button>
+    <button id="hearBtn" class="playbtn" aria-label="Hear it" title="Hear it"><span class="tri">▶</span></button>
     <button id="skipBtn" class="secondary">Skip ⏭</button>
     <button id="revealBtn" class="secondary">Reveal notes</button>
   </div>
 
   <div class="piano-wrap"><div id="piano" class="piano"></div></div>
 
-  <div class="stats">
-    <div class="stat"><div id="streak" class="n">0</div><div class="l">Streak</div></div>
-    <div class="stat"><div id="best" class="n">0</div><div class="l">Best</div></div>
-    <div class="stat"><div id="correct" class="n">0</div><div class="l">Correct</div></div>
-    <div class="stat"><div id="total" class="n">0</div><div class="l">Attempts</div></div>
-    <div class="stat"><div id="acc" class="n">—</div><div class="l">Accuracy</div></div>
+  <div class="stats-row">
+    <div class="stats">
+      <div class="stat"><div id="streak" class="n">0</div><div class="l">Streak</div></div>
+      <div class="stat"><div id="best" class="n">0</div><div class="l">Best</div></div>
+      <div class="stat"><div id="correct" class="n">0</div><div class="l">Correct</div></div>
+      <div class="stat"><div id="total" class="n">0</div><div class="l">Attempts</div></div>
+      <div class="stat"><div id="acc" class="n">—</div><div class="l">Accuracy</div></div>
+    </div>
   </div>
 
-  <!-- SETTINGS (separate, collapsible) -->
-  <details class="settings">
-    <summary>⚙️ Chord types &amp; inversions <span class="chev">›</span></summary>
-    <div class="settings-body">
-      <h4>Chord types</h4>
-      <div id="typeChips" class="chips"></div>
-      <h4>Inversions</h4>
-      <div id="invChips" class="chips"></div>
-    </div>
-  </details>
+  <!-- SETTINGS (single overlay behind the gear) -->
+  <div id="settingsModal" class="modal-backdrop">
+    <div class="modal" role="dialog" aria-modal="true" aria-label="Settings">
+      <div class="modal-head">
+        Settings
+        <button id="settingsClose" class="modal-close" aria-label="Close settings">✕</button>
+      </div>
+      <div class="modal-body settings-body">
 
-  <details class="settings">
-    <summary>🎚️ Practice mode &amp; audio <span class="chev">›</span></summary>
-    <div class="settings-body">
-      <h4>Mode</h4>
-      <div class="row">
-        <div class="seg" id="modeSeg">
-          <button data-mode="relaxed" class="on">Relaxed</button>
-          <button data-mode="speed">Speed / timed</button>
+        <div class="modal-section">
+          <div class="sec-title">Chord types &amp; inversions</div>
+          <h4>Chord types</h4>
+          <div id="typeChips" class="chips"></div>
+          <h4>Inversions</h4>
+          <div id="invChips" class="chips"></div>
         </div>
-        <label id="speedWrap" style="display:none;">Seconds per chord:
-          <select id="speedSel">
-            <option>5</option><option selected>10</option><option>15</option><option>20</option>
-          </select>
-        </label>
-      </div>
-      <h4>Matching &amp; challenge</h4>
-      <div class="row">
-        <label><input type="checkbox" id="openVoicing" /> Accept open voicings — any octave spread, as long as the bass note &amp; chord tones are right</label>
-      </div>
-      <div class="row">
-        <label><input type="checkbox" id="earOnly" /> Ear-only mode — hide the name, just play what you hear</label>
-      </div>
-      <h4>Weak-spot focus</h4>
-      <div class="row">
-        <label><input type="checkbox" id="weakFocus" checked /> Show my most-missed chords more often</label>
-      </div>
-      <h4>Audio &amp; display</h4>
-      <div class="row">
-        <label><input type="checkbox" id="autoHear" /> Auto-play target on each new chord</label>
-        <label><input type="checkbox" id="labels" checked /> Note labels on keys</label>
-        <label><input type="checkbox" id="sound" checked /> Sound when I play</label>
-      </div>
-      <div class="row">
-        <label>Instrument:
-          <select id="instSel">
-            <option value="piano">Acoustic Piano</option>
-            <option value="epiano">Electric Piano</option>
-            <option value="organ">Organ</option>
-            <option value="synth">Synth</option>
-          </select>
-        </label>
-        <span id="soundNote" style="color:var(--muted);font-size:12px;">loading piano…</span>
-      </div>
-    </div>
-  </details>
 
-  <details class="settings">
-    <summary>📊 Weak spots &amp; saved progress <span class="chev">›</span></summary>
-    <div class="settings-body">
-      <h4>Most-missed (saved on this device)</h4>
-      <div id="weakList" class="weak-list"><span class="none">No misses recorded yet — go get some wrong. 😄</span></div>
-      <div class="row"><button id="resetStats" class="linkbtn">Reset all saved stats</button></div>
+        <div class="modal-section">
+          <div class="sec-title">Practice mode &amp; audio</div>
+          <h4>Mode</h4>
+          <div class="row">
+            <div class="seg" id="modeSeg">
+              <button data-mode="relaxed" class="on">Relaxed</button>
+              <button data-mode="speed">Speed / timed</button>
+            </div>
+            <label id="speedWrap" style="display:none;">Seconds per chord:
+              <select id="speedSel">
+                <option>5</option><option selected>10</option><option>15</option><option>20</option>
+              </select>
+            </label>
+          </div>
+          <h4>Matching &amp; challenge</h4>
+          <div class="switch-list">
+            <label class="switch"><input type="checkbox" id="openVoicing" /><span class="track"></span><span class="txt">Accept open voicings — any octave spread, as long as the bass note &amp; chord tones are right</span></label>
+            <label class="switch"><input type="checkbox" id="earOnly" /><span class="track"></span><span class="txt">Ear-only mode — hide the name, just play what you hear</span></label>
+          </div>
+          <h4>Weak-spot focus</h4>
+          <div class="switch-list">
+            <label class="switch"><input type="checkbox" id="weakFocus" checked /><span class="track"></span><span class="txt">Show my most-missed chords more often</span></label>
+          </div>
+          <h4>Audio &amp; display</h4>
+          <div class="switch-list">
+            <label class="switch"><input type="checkbox" id="autoHear" /><span class="track"></span><span class="txt">Auto-play target on each new chord</span></label>
+            <label class="switch"><input type="checkbox" id="labels" checked /><span class="track"></span><span class="txt">Note labels on keys</span></label>
+            <label class="switch"><input type="checkbox" id="sound" checked /><span class="track"></span><span class="txt">Sound when I play</span></label>
+          </div>
+          <div class="row">
+            <label>Instrument:
+              <select id="instSel">
+                <option value="piano">Acoustic Piano</option>
+                <option value="epiano">Electric Piano</option>
+                <option value="organ">Organ</option>
+                <option value="synth">Synth</option>
+              </select>
+            </label>
+            <span id="soundNote" style="color:var(--muted);font-size:12px;">loading piano…</span>
+          </div>
+        </div>
+
+        <div class="modal-section">
+          <div class="sec-title">Weak spots &amp; saved progress</div>
+          <h4>Most-missed (saved on this device)</h4>
+          <div id="weakList" class="weak-list"><span class="none">No misses recorded yet — go get some wrong. 😄</span></div>
+          <div class="row"><button id="resetStats" class="linkbtn">Reset all saved stats</button></div>
+        </div>
+
+      </div>
     </div>
-  </details>
+  </div>
 
 </div>
 
@@ -415,6 +481,7 @@ const CHORD_TYPES = {
   "maj7": {label:"major 7th",   symbol:"maj7",intervals:[0,4,7,11]},
   "min7": {label:"minor 7th",   symbol:"min7",intervals:[0,3,7,10]},
   "dom7": {label:"dominant 7th",symbol:"7",   intervals:[0,4,7,10]},
+  "dim7": {label:"diminished 7th",symbol:"dim7",intervals:[0,3,6,9]},
 };
 const INV_NAMES = ["Root position","1st inversion","2nd inversion","3rd inversion"];
 const REVEAL_AFTER = 3;
@@ -938,7 +1005,19 @@ document.getElementById("resetStats").onclick = ()=>{
   store = { correct:0, total:0, best:0, misses:{} };
   state.streak=0; saveStore(); updateStats(); renderWeakList();
 };
-document.addEventListener("keydown", e=>{ if(e.key==="Enter") pickRandom(); });
+// ---- Settings modal open/close ----
+const settingsModal = document.getElementById("settingsModal");
+function openSettings(){ renderWeakList(); settingsModal.classList.add("open"); }
+function closeSettings(){ settingsModal.classList.remove("open"); }
+document.getElementById("settingsBtn").onclick = openSettings;
+document.getElementById("settingsClose").onclick = closeSettings;
+settingsModal.addEventListener("click", e=>{ if(e.target===settingsModal) closeSettings(); });
+
+document.addEventListener("keydown", e=>{
+  if(e.key==="Escape" && settingsModal.classList.contains("open")){ closeSettings(); return; }
+  if(settingsModal.classList.contains("open")) return; // don't advance chords while settings are open
+  if(e.key==="Enter") pickRandom();
+});
 
 // ---- Init ----
 buildChips();
