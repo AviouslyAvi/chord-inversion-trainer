@@ -268,6 +268,24 @@
   select { background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: 9px; padding: 7px 10px; font-size: 13px; font-family: var(--font); }
   .picker { background: var(--panel); border: 1px solid var(--border); border-radius: 999px; padding: 6px 12px; font-size: 12px; max-width: 46vw; backdrop-filter: blur(10px); }
 
+  /* ---- MIDI browser-support notice ---- */
+  .midihelp {
+    background:
+      linear-gradient(180deg, rgba(255,207,91,0.10), rgba(255,207,91,0.04)),
+      var(--panel);
+    border: 1px solid rgba(255,207,91,0.42);
+    border-radius: 18px; padding: 16px 18px; margin-bottom: 18px;
+    font-size: 14px; line-height: 1.6; color: var(--text);
+    box-shadow: 0 18px 44px -22px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.05);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    animation: pop 0.45s var(--ease);
+  }
+  .midihelp h4 { margin: 0 0 8px; color: var(--warn); font-size: 14px; font-family: var(--font-display); letter-spacing: -0.01em; }
+  .midihelp ol { margin: 10px 0 0; padding-left: 20px; }
+  .midihelp li { margin: 4px 0; }
+  .midihelp code { background: var(--panel2); border: 1px solid var(--border); padding: 1px 7px; border-radius: 6px; font-size: 12.5px; font-family: var(--font-mono); }
+  .midihelp .dismiss { float: right; margin-left: 12px; }
+
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation-duration: 0.001s !important; transition-duration: 0.001s !important; }
   }
@@ -283,6 +301,8 @@
       <div id="status" class="status">Looking for MIDI…</div>
     </div>
   </div>
+
+  <div id="midiHelp" class="midihelp" style="display:none;"></div>
 
   <!-- HERO -->
   <div class="hero">
@@ -805,18 +825,52 @@ function refreshMidiSelect(){
   }
   bindMidiInputs();
 }
+function detectBrowser(){
+  const ua = navigator.userAgent;
+  const isGecko = ("MozAppearance" in document.documentElement.style) || /firefox|gecko\//i.test(ua);
+  if (isGecko) return "gecko"; // Firefox, and Firefox-based browsers like Zen
+  const isSafari = /safari/i.test(ua) && !/chrome|chromium|crios|android|edg|fxios/i.test(ua);
+  if (isSafari) return "safari";
+  return "other";
+}
+function showMidiHelp(reason){
+  const el = document.getElementById("midiHelp");
+  const b = detectBrowser();
+  let html;
+  if (b === "gecko"){
+    html = `<h4>⚠️ Web MIDI is turned off in your browser (Firefox / Zen family)</h4>
+      Zen is built on Firefox, which ships with Web MIDI <b>disabled</b>. To try turning it on:
+      <ol>
+        <li>Open a new tab and go to <code>about:config</code>, then accept the warning.</li>
+        <li>Search for <code>dom.webmidi.enabled</code>.</li>
+        <li>Double-click it so it reads <b>true</b>.</li>
+        <li>Fully restart the browser, reload this page, and allow the MIDI permission if prompted.</li>
+      </ol>
+      Firefox's Web MIDI is still incomplete, so if your device doesn't appear after that, open this page in <b>Chrome, Edge, or Brave</b> — it just works there. Mouse &amp; touch work here either way.`;
+  } else if (b === "safari"){
+    html = `<h4>⚠️ Safari doesn't support Web MIDI</h4>
+      Safari (WebKit) has no Web MIDI at all. Open this page in <b>Chrome, Edge, or Brave</b> to use your MIDI keyboard. Mouse &amp; touch work here either way.`;
+  } else {
+    html = `<h4>⚠️ MIDI isn't available in this browser</h4>
+      ${reason === "denied" ? "MIDI access was blocked — check the site permissions and reload." : "Web MIDI didn't load. Try <b>Chrome, Edge, or Brave</b>, and make sure the page is served over HTTPS."} Mouse &amp; touch work here either way.`;
+  }
+  html += ` <button class="linkbtn dismiss" onclick="document.getElementById('midiHelp').style.display='none'">dismiss ✕</button>`;
+  el.innerHTML = html;
+  el.style.display = "block";
+}
 function initMIDI(){
   const sel = document.getElementById("midiSel");
   if (!navigator.requestMIDIAccess){
-    setStatus("No Web MIDI — use Chrome/Edge, or play mouse/touch", false);
+    setStatus("No Web MIDI in this browser — see note above · mouse/touch works", false);
     sel.innerHTML = '<option>MIDI unsupported here</option>';
+    showMidiHelp("unsupported");
     return;
   }
   navigator.requestMIDIAccess().then(access=>{
     midiAccess = access;
     refreshMidiSelect();
     access.onstatechange = refreshMidiSelect;
-  }).catch(()=>{ setStatus("MIDI denied — mouse/touch still works", false); sel.innerHTML='<option>MIDI blocked</option>'; });
+  }).catch(()=>{ setStatus("MIDI blocked — mouse/touch still works", false); sel.innerHTML='<option>MIDI blocked</option>'; showMidiHelp("denied"); });
 }
 function setStatus(msg,ok){ const el=document.getElementById("status"); el.textContent=msg; el.className="status"+(ok?" connected":""); }
 
