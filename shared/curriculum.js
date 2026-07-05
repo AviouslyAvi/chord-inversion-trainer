@@ -34,7 +34,7 @@ Trainer.curriculum = (function(){
   function starPips(n, max){
     max = max || 5;
     let h = "";
-    for (let i=0;i<max;i++) h += `<span class="pip${i<n?" on":""}"></span>`;
+    for (let i=0;i<max;i++) h += `<span class="pip${i<n?" on":""}">${i<n?"★":"☆"}</span>`;
     return h;
   }
 

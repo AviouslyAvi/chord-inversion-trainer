@@ -225,6 +225,14 @@ button:active { transform: translateY(1px); }
 .key .lbl { position: absolute; bottom: 6px; left: 0; right: 0; text-align: center; font-size: 10px; font-family: var(--font-mono); color: #7b8290; pointer-events: none; }
 .key.black .lbl { color: #aab2c2; }
 
+/* ---- accuracy stars (course tiles + result screen) ---- */
+.stars { display:flex; gap:4px; }
+.pip {
+  font-size:14px; line-height:1; color:var(--panel2);
+  text-shadow:none; transition: color .18s, text-shadow .18s;
+}
+.pip.on { color:var(--warn); text-shadow:0 0 8px rgba(255,207,91,0.65); }
+
 /* ---- compact score bar ---- */
 .stats {
   display: inline-flex; gap: 0; margin: 0 auto 22px; flex-wrap: wrap;

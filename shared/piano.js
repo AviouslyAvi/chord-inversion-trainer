@@ -29,7 +29,9 @@ Trainer.piano = (function(){
         else { k.className="key white"; k.style.left=positions[n]+"px"; }
         if (held.has(n)) k.classList.add(isBlack(pc)?"held-black":"held-white");
         if (targetPcs.has(pc)) k.classList.add("target");
-        if (o.labels){
+        // labels: true = every key, "c" = only C's (anchor, low bloat), false = none
+        const showLbl = o.labels === "c" ? pc===0 : !!o.labels;
+        if (showLbl){
           const lbl=document.createElement("div"); lbl.className="lbl";
           lbl.textContent = NN[pc] + (pc===0 ? Math.floor(n/12)-1 : "");
           k.appendChild(lbl);
@@ -59,7 +61,7 @@ Trainer.piano = (function(){
       draw, noteOn, noteOff, held,
       highlight(arr){ targetPcs = new Set(arr.map(x=>((x%12)+12)%12)); draw(); },
       clearHighlight(){ targetPcs = new Set(); draw(); },
-      clear(){ held.clear(); draw(); },
+      clear(){ held.clear(); targetPcs = new Set(); draw(); },
       setLabels(b){ o.labels=b; draw(); },
       setSound(b){ o.sound=b; },
     };
