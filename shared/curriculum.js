@@ -14,7 +14,7 @@ Trainer.curriculum = (function(){
   "use strict";
 
   // lesson-type → tile icon (open registry: add a type, add an icon)
-  const ICONS = { intro:"🎹", keys:"📦", learn:"🧩", review:"🔍", practice:"⏱️", play:"🥷", module:"🎯" };
+  const ICONS = { intro:"🎹", keys:"📦", learn:"🧩", review:"🔍", practice:"⏱️", play:"🥷", module:"🎯", free:"⚙️" };
 
   // Accuracy-first star score (TypingClub weights accuracy over speed).
   // `fast` grants one speed star once accuracy is already solid.
@@ -39,11 +39,11 @@ Trainer.curriculum = (function(){
   }
 
   function mount(cfg){
-    const { mountEl, course, store, onPlay } = cfg;
+    const { mountEl, course, store, onPlay, onFreePractice } = cfg;
 
     // Flatten lessons and compute the cumulative note pool at each lesson.
     const flat = [];
-    course.units.forEach(u => u.lessons.forEach(l => { l._unit = u.title; flat.push(l); }));
+    course.units.forEach((u,ui) => u.lessons.forEach(l => { l._unit = u.title; l._unitIdx = ui; flat.push(l); }));
     let pool = [];
     flat.forEach(l => {
       if (l.notes && l.notes.length){
@@ -51,6 +51,21 @@ Trainer.curriculum = (function(){
         pool = Array.from(set).sort((a,b)=>a-b);
       }
       l._pool = pool.slice();
+    });
+
+    // Per-unit content, for the Free Practice panel ("only the things from this unit").
+    course.units.forEach((u,ui) => {
+      const notes = new Set(), qtypes = [];
+      u.lessons.forEach(l => {
+        (l.notes||[]).forEach(n => notes.add(n));
+        (l.q||[]).forEach(q => { if (!qtypes.includes(q)) qtypes.push(q); });
+      });
+      u._idx = ui;
+      u._notes = Array.from(notes).sort((a,b)=>a-b);
+      u._qtypes = qtypes;
+      // does this unit teach/touch inversions? (drives the inverted-review toggle)
+      u._hasInv = u.lessons.some(l => l.inv || /invers/i.test(l.title||""));
+      u._firstLesson = u.lessons[0];
     });
 
     store.data.lessons = store.data.lessons || {};
@@ -87,14 +102,26 @@ Trainer.curriculum = (function(){
               ${badge}
             </button>`;
         }).join("");
+        // Free Practice tile — one per unit, drills only that unit's content.
+        // Available once the unit is reachable (its first lesson is unlocked).
+        let freeTile = "";
+        if (onFreePractice && isUnlocked(u._firstLesson)){
+          freeTile = `<button class="tile free" data-free="${u._idx}">
+              <span class="num">∞</span>
+              <span class="tico">${ICONS.free}</span>
+              <span class="tname">Free Practice</span>
+              <div class="freehint">customize this unit</div>
+            </button>`;
+        }
         return `<section class="unit">
             <h2 class="unit-title">${u.title}</h2>
-            <div class="tiles">${tiles}</div>
+            <div class="tiles">${tiles}${freeTile}</div>
           </section>`;
       }).join("");
       mapEl.innerHTML = unitsHtml;
       mapEl.querySelectorAll(".tile:not(.locked)").forEach(btn => {
         btn.onclick = () => {
+          if (btn.dataset.free != null){ onFreePractice(course.units[+btn.dataset.free], controller); return; }
           const l = flat.find(x => x.id === btn.dataset.id);
           if (l) onPlay(l, controller);
         };

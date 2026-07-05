@@ -87,6 +87,7 @@
       <div id="feedback" class="feedback"></div>
       <div id="liveRead" class="liveread"></div>
       <div id="goal" class="goal"></div>
+      <div id="timerbar" class="timerbar"></div>
     </div>
 
     <div class="masterrow" id="masterrow" hidden></div>
@@ -116,6 +117,7 @@
 <script src="../shared/midi.js"></script>
 <script src="../shared/store.js"></script>
 <script src="../shared/shell.js"></script>
+<script src="../shared/conveyor.js"></script>
 <script src="../shared/curriculum.js"></script>
 <script>
 "use strict";
@@ -227,18 +229,24 @@ Trainer.audio.loadInstrument("piano");
 const $ = id => document.getElementById(id);
 const eyebrowEl=$("eyebrow"), promptEl=$("prompt"), invBadgeEl=$("invBadge"),
       basslineEl=$("bassline"), notesEl=$("promptNotes"), triesEl=$("tries"),
-      fbEl=$("feedback"), liveEl=$("liveRead"), goalEl=$("goal"),
+      fbEl=$("feedback"), liveEl=$("liveRead"), goalEl=$("goal"), barEl=$("timerbar"),
       masterrowEl=$("masterrow"), controlsEl=$("controls"),
       sMaster=$("sMaster"), sScore=$("sScore"), sGoal=$("sGoal"), sAcc=$("sAcc");
 
+// prev/current/next chord strip — used in untimed, non-ear lessons so the upcoming
+// chord eases into view. Mounted just after the prompt in the hero.
+const conveyor = Trainer.conveyor.create(invBadgeEl.parentNode);
+invBadgeEl.parentNode.insertBefore(conveyor.el, invBadgeEl);
+conveyor.hide();
+
 // ---- course controller ----
-const course = C.mount({ mountEl: document.getElementById("app"), course: COURSE, store, onPlay: startLesson });
+const course = C.mount({ mountEl: document.getElementById("app"), course: COURSE, store, onPlay: startLesson, onFreePractice: openFreePractice });
 $("backBtn").onclick = endToMap;
 
 // =====================================================================
 //  LESSON RUNNER
 // =====================================================================
-let sess = null;
+let sess = null, timerId = null;
 const CFG = { masterN: 3 };   // consecutive clean hits per (quality × inversion) skill
 
 // every valid quality×inversion combo for this lesson becomes a "skill"
@@ -251,8 +259,10 @@ function skillsFor(lesson){
   return out;
 }
 
-function startLesson(lesson){
+function startLesson(lesson, opts){
+  opts = opts || {};
   course.showLesson();
+  stopTimer(); conveyor.hide(); promptEl.hidden = false; barEl.style.opacity = 0;
   controlsEl.hidden = false; masterrowEl.hidden = true;
   fbEl.className = "feedback"; fbEl.textContent = ""; liveEl.textContent = ""; liveEl.className = "liveread";
   notesEl.className = "prompt-notes"; notesEl.textContent = ""; triesEl.textContent = "";
@@ -260,7 +270,11 @@ function startLesson(lesson){
 
   if (lesson.type === "intro") return showPrimer(lesson);
 
-  const skills = skillsFor(lesson);
+  let skills = skillsFor(lesson);
+  if (opts.weakSpot){                       // free practice: drill your most-missed skills
+    const weak = skills.filter(s => (store.misses["skill:"+s.key]||0) > 0);
+    if (weak.length) skills = weak;
+  }
   // 5-note chords (9ths) span a full 9th; inverting them pushes the top voice past
   // the piano's ceiling at the usual BASE. Drop the anchor for any lesson that
   // contains a 5-note quality so every inversion fits on the keys (48 → tops out ~80).
@@ -271,15 +285,33 @@ function startLesson(lesson){
     mastery: Object.fromEntries(skills.map(s=>[s.key,0])),
     correct:0, attempts:0, answered:false, wrongTries:0, lastAttemptSig:null,
     prompt:null, lastPrompt:null, over:false,
+    free: !!opts.free, endless: !!opts.endless, earOnly: !!opts.earOnly,
+    timed: !!opts.timed, freeUnit: opts.unit || null,
+    convStarted:false, queue:null,     // conveyor 1-ahead lookahead
   };
-  masterrowEl.hidden = false;
-  goalEl.textContent = `Nail each chord type & inversion ${CFG.masterN}× in a row to clear this lesson`;
-  updateStats(); renderMasterRow();
+  // The conveyor (prev/current/next) runs in untimed, non-ear lessons — a visible
+  // lookahead can't trivialize a timed drill, and ear-only hides the name anyway.
+  sess.useConveyor = !sess.earOnly && !sess.timed;
+  if (sess.free){
+    goalEl.textContent = "Free practice — press Stop when you're done";
+    controlsEl.innerHTML = `<button id="hearBtn" class="playbtn" aria-label="Hear it" title="Hear it"><span class="tri">▶</span></button>
+        <button id="fpStop" class="secondary">Stop ⏹</button>
+        <button id="revealBtn" class="secondary">Reveal notes</button>`;
+    $("hearBtn").onclick = hearCurrent;
+    $("fpStop").onclick = finishFree;
+    $("revealBtn").onclick = ()=>{ if (sess && sess.prompt) reveal(); };
+  } else {
+    masterrowEl.hidden = false;
+    goalEl.textContent = `Nail each chord type & inversion ${CFG.masterN}× in a row to clear this lesson`;
+    renderMasterRow();
+  }
+  updateStats();
   nextPrompt();
 }
 
 function showPrimer(lesson){
   sess = null;
+  conveyor.hide(); promptEl.hidden = false;
   eyebrowEl.textContent = "Getting started";
   promptEl.innerHTML = `<span class="root" style="font-size:.5em">What's an inversion?</span>`;
   invBadgeEl.textContent = ""; basslineEl.innerHTML = ""; goalEl.textContent = ""; masterrowEl.hidden = true;
@@ -314,46 +346,88 @@ restoreControls();
 
 // pick the next skill (least-mastered weighted) + a root from the active pool
 function pickSkill(){
-  const pool = sess.skills.filter(s => sess.mastery[s.key] < CFG.masterN);
+  // Endless free practice never "masters out" — keep drawing from every skill.
+  const pool = sess.endless ? sess.skills : sess.skills.filter(s => sess.mastery[s.key] < CFG.masterN);
   if (!pool.length) return null;
-  const weights = pool.map(s => CFG.masterN - sess.mastery[s.key]);
+  const weights = pool.map(s => sess.endless ? 1 : (CFG.masterN - sess.mastery[s.key]));
   let sum = weights.reduce((a,b)=>a+b,0), r = Math.random()*sum, chosen = pool[0];
   for (let i=0;i<pool.length;i++){ r -= weights[i]; if (r<=0){ chosen = pool[i]; break; } }
   return chosen;
 }
 
+// a full prompt selection = a skill (quality × inversion) + a root
+function pickPrompt(){
+  const skill = pickSkill();
+  if (!skill) return null;
+  return { skill, rootPc: sess.roots[Math.floor(Math.random()*sess.roots.length)] };
+}
+
+// HTML for one conveyor slot: chord name over its inversion
+function convItem(pick){
+  const label = CHORD_TYPES[pick.skill.q].label;
+  return `<div class="cc"><div class="cc-name"><span class="root">${NOTE_NAMES[pick.rootPc]}</span> <span class="qual">${label}</span></div>`
+       + `<div class="cc-inv">${INV_NAMES[pick.skill.inv]}</div></div>`;
+}
+
 function nextPrompt(){
   if (!sess || sess.over) return;
-  let skill, rootPc, sig;
-  for (let guard=0; guard<24; guard++){
-    skill = pickSkill();
-    if (!skill){ sess.over = true; return finish(); }   // every skill mastered
-    rootPc = sess.roots[Math.floor(Math.random()*sess.roots.length)];
-    sig = skill.key+"@"+rootPc;
-    if (sig !== sess.lastPrompt || sess.roots.length*sess.skills.length <= 1) break;
-  }
-  sess.lastPrompt = sig;
+  const useConveyor = sess.useConveyor;
+
+  // True random draw — repeats allowed (mastery weighting still steers toward
+  // weaker skills). With the conveyor, the current chord is the one we queued last.
+  const pick = (useConveyor && sess.convStarted) ? sess.queue : pickPrompt();
+  if (!pick){ sess.over = true; return finish(); }   // every skill mastered
+  const skill = pick.skill, rootPc = pick.rootPc;
+  sess.lastPrompt = skill.key+"@"+rootPc;
   sess.prompt = {
     rootPc, typeKey: skill.q, inv: skill.inv, skillKey: skill.key,
     targetPcs: voicing(rootPc, skill.q, skill.inv),
     midis: voicingMidi(rootPc, skill.q, skill.inv, sess.base),
   };
   sess.answered = false; sess.wrongTries = 0; sess.lastAttemptSig = null;
+  stopTimer();
   piano.clear(); piano.clearHighlight();
 
   const c = sess.prompt;
   eyebrowEl.textContent = sess.lesson.title;
-  promptEl.classList.remove("pop"); void promptEl.offsetWidth; promptEl.classList.add("pop");
-  promptEl.innerHTML = `<span class="root">${NOTE_NAMES[c.rootPc]}</span> <span class="qual">${CHORD_TYPES[c.typeKey].label}</span>`;
-  invBadgeEl.textContent = INV_NAMES[c.inv];
-  basslineEl.innerHTML = state.openVoicing
+
+  const bassHint = () => state.openVoicing
     ? `Bass note must be <b>${NOTE_NAMES[c.targetPcs[0]]}</b> — spread the other notes anywhere`
     : `Play bottom → top · lowest note (bass): <b>${NOTE_NAMES[c.targetPcs[0]]}</b>`;
+
+  if (sess.earOnly){
+    // hide the written chord — reproduce it purely from the sound
+    conveyor.hide(); sess.convStarted = false; promptEl.hidden = false;
+    promptEl.classList.remove("pop"); void promptEl.offsetWidth; promptEl.classList.add("pop");
+    promptEl.innerHTML = `<span class="root" style="font-size:.5em">🔊 Play what you hear</span>`;
+    invBadgeEl.textContent = ""; basslineEl.innerHTML = "";
+  } else if (useConveyor){
+    // prompt name lives in the conveyor; the bass hint still shows for the current chord
+    promptEl.hidden = true; invBadgeEl.textContent = "";
+    conveyor.show();
+    sess.queue = pickPrompt();                       // peek the upcoming chord
+    if (!sess.convStarted){
+      sess.convStarted = true;
+      conveyor.reset(convItem(pick), sess.queue ? convItem(sess.queue) : null);
+    } else {
+      conveyor.advance(sess.queue ? convItem(sess.queue) : null);
+    }
+    basslineEl.innerHTML = bassHint();
+  } else {
+    // timed drill: single prompt, no lookahead
+    conveyor.hide(); sess.convStarted = false; promptEl.hidden = false;
+    promptEl.classList.remove("pop"); void promptEl.offsetWidth; promptEl.classList.add("pop");
+    promptEl.innerHTML = `<span class="root">${NOTE_NAMES[c.rootPc]}</span> <span class="qual">${CHORD_TYPES[c.typeKey].label}</span>`;
+    invBadgeEl.textContent = INV_NAMES[c.inv];
+    basslineEl.innerHTML = bassHint();
+  }
   notesEl.className = "prompt-notes"; notesEl.textContent = "";
   triesEl.textContent = ""; fbEl.className = "feedback"; fbEl.textContent = "";
   liveEl.textContent = ""; liveEl.className = "liveread";
 
-  if (state.autoHear) setTimeout(hearCurrent, 300);
+  if (sess.earOnly) setTimeout(hearCurrent, 300);        // always audible in ear-only
+  else if (state.autoHear) setTimeout(hearCurrent, 300);
+  if (sess.timed) startTimer();
 }
 
 function hearCurrent(){ if (sess && sess.prompt) Trainer.audio.hearNotes(sess.prompt.midis); }
@@ -403,7 +477,7 @@ function resolve(ok, skip, playedPcs){
     piano.highlight(c.targetPcs);
     store.save(); updateStats(); renderMasterRow();
 
-    const done = sess.skills.every(s => sess.mastery[s.key] >= CFG.masterN);
+    const done = !sess.endless && sess.skills.every(s => sess.mastery[s.key] >= CFG.masterN);
     if (done){ sess.over = true; setTimeout(finish, 780); }
     else setTimeout(nextPrompt, 780);
   } else {
@@ -435,7 +509,7 @@ function reveal(){
 }
 
 function finish(){
-  piano.clearHighlight(); masterrowEl.hidden = true;
+  stopTimer(); piano.clearHighlight(); masterrowEl.hidden = true;
   const acc = sess.attempts ? sess.correct/sess.attempts : 0;
   const stars = acc>=0.9 ? 5 : acc>=0.75 ? 4 : 3;   // cleared by mastery → at least 3
   course.record(sess.lesson.id, {stars, acc:Math.round(acc*100)});
@@ -444,6 +518,7 @@ function finish(){
 
 function showResult(stars, acc){
   const lesson = sess.lesson;
+  stopTimer(); conveyor.hide(); promptEl.hidden = false; barEl.style.opacity = 0;
   eyebrowEl.textContent = "Lesson complete";
   promptEl.innerHTML = `<span class="root" style="font-size:.5em">${stars>=4?"Brilliant!":"Cleared!"}</span>`;
   invBadgeEl.textContent = ""; basslineEl.innerHTML = ""; notesEl.textContent = ""; triesEl.textContent = "";
@@ -458,7 +533,72 @@ function showResult(stars, acc){
   sess = null;
 }
 
-function endToMap(){ sess = null; piano.clear(); piano.clearHighlight(); restoreControls(); course.showMap(); }
+function endToMap(){ stopTimer(); conveyor.hide(); promptEl.hidden = false; sess = null; piano.clear(); piano.clearHighlight(); restoreControls(); course.showMap(); }
+
+// =====================================================================
+//  FREE PRACTICE — per-unit, customizable (this unit's chord types only)
+// =====================================================================
+function openFreePractice(unit){
+  stopTimer(); sess = null; conveyor.hide(); promptEl.hidden = false; piano.clear(); piano.clearHighlight();
+  course.showLesson(); restoreControls(); masterrowEl.hidden = true; barEl.style.opacity = 0;
+  eyebrowEl.textContent = unit.title;
+  promptEl.innerHTML = `<span class="root" style="font-size:.5em">⚙️ Free Practice</span>`;
+  invBadgeEl.textContent = ""; basslineEl.innerHTML = ""; notesEl.textContent = "";
+  triesEl.textContent = ""; liveEl.textContent = ""; goalEl.textContent = "";
+  const qtypes = (unit._qtypes && unit._qtypes.length) ? unit._qtypes : ["maj","min","dim"];
+  const isTriadUnit = qtypes.every(q => CHORD_TYPES[q].intervals.length === 3);
+  fbEl.className = "feedback";
+  fbEl.innerHTML = `<div class="freepanel">
+      <div class="fp-sec"><div class="fp-lbl">Chord types from this unit</div>
+        <div class="chips" id="fpTypes">${qtypes.map(q=>`<button class="chip on" data-q="${q}">${CHORD_TYPES[q].label}</button>`).join("")}</div></div>
+      <div class="fp-sec switch-list">
+        <label class="switch"><input type="checkbox" id="fpInv" ${isTriadUnit?"checked":""} /><span class="track"></span><span class="txt">Inverted review — mix in 1st / 2nd / 3rd inversions</span></label>
+        <label class="switch"><input type="checkbox" id="fpAllKeys" /><span class="track"></span><span class="txt">All keys (not just white-key roots)</span></label>
+        <label class="switch"><input type="checkbox" id="fpWeak" /><span class="track"></span><span class="txt">Weak-spot focus — your most-missed chords</span></label>
+        <label class="switch"><input type="checkbox" id="fpEar" /><span class="track"></span><span class="txt">Ear-only — hide the name, play what you hear</span></label>
+        <label class="switch"><input type="checkbox" id="fpTimed" /><span class="track"></span><span class="txt">Timed — a countdown on every chord</span></label>
+      </div>
+    </div>`;
+  controlsEl.innerHTML = `<button id="fpStart">Start →</button><button id="fpBack" class="secondary">← Map</button>`;
+  fbEl.querySelectorAll("#fpTypes .chip").forEach(ch => ch.onclick = ()=> ch.classList.toggle("on"));
+  $("fpStart").onclick = ()=>{
+    const q = [...fbEl.querySelectorAll("#fpTypes .chip.on")].map(c=>c.dataset.q);
+    if (!q.length) return;
+    const synthetic = {
+      id:"free-i"+unit._idx, type:"review", title:"Free · "+unit.title,
+      q, inv: $("fpInv").checked ? [0,1,2,3] : [0],   // skillsFor drops inversions beyond each chord's size
+      roots: $("fpAllKeys").checked ? "all" : "white",
+    };
+    startLesson(synthetic, { free:true, endless:true, earOnly:$("fpEar").checked, weakSpot:$("fpWeak").checked, timed:$("fpTimed").checked, unit });
+  };
+  $("fpBack").onclick = endToMap;
+}
+
+function finishFree(){
+  if (!sess){ return endToMap(); }
+  const unit = sess.freeUnit;
+  piano.clearHighlight(); masterrowEl.hidden = true;
+  const acc = sess.attempts ? sess.correct/sess.attempts : 0;
+  showResult(C.starsFor(acc), acc);                       // reuse result card (no unlock gating)
+  $("retryBtn").onclick = ()=>{ restoreControls(); openFreePractice(unit); };   // retry re-opens the panel
+}
+
+// ---- per-prompt countdown (timed free practice only, reuses .timerbar) ----
+const FREE_TIMED_MS = 8000;   // building a voicing takes longer than tapping a chip
+function perfNow(){ return (window.performance && performance.now) ? performance.now() : new Date().getTime(); }
+function startTimer(){
+  stopTimer();
+  const dur = FREE_TIMED_MS, start = perfNow();
+  barEl.style.opacity = 1; barEl.style.transform = "scaleX(1)";
+  // setInterval (not rAF) so the countdown survives a blurred/hidden tab
+  timerId = setInterval(function(){
+    if (!sess || sess.over || sess.answered){ stopTimer(); return; }
+    const left = 1 - (perfNow()-start)/dur;
+    if (left <= 0){ stopTimer(); barEl.style.transform = "scaleX(0)"; resolve(false, true); return; }  // ran out → reveal & move on
+    barEl.style.transform = "scaleX("+left.toFixed(3)+")";
+  }, 50);
+}
+function stopTimer(){ if (timerId){ clearInterval(timerId); timerId = null; } barEl.style.opacity = 0; barEl.style.transform = "scaleX(1)"; }
 
 // ---- live chord identification while you build the chord ----
 function identify(){

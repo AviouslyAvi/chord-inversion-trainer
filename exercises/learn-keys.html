@@ -112,6 +112,7 @@
 <script src="../shared/midi.js"></script>
 <script src="../shared/store.js"></script>
 <script src="../shared/shell.js"></script>
+<script src="../shared/conveyor.js"></script>
 <script src="../shared/curriculum.js"></script>
 <script>
 "use strict";
@@ -192,10 +193,15 @@ const eyebrowEl=$("eyebrow"), promptEl=$("prompt"), staffEl=$("staff"),
       barEl=$("timerbar"), answersEl=$("answers"), controlsEl=$("controls"),
       sStreak=$("sStreak"), sScore=$("sScore"), sGoal=$("sGoal"), sAcc=$("sAcc");
 
+// prev/current/next prompt strip — used in "play the note" mode (untimed lessons)
+const conveyor = Trainer.conveyor.create(promptEl.parentNode);
+promptEl.parentNode.insertBefore(conveyor.el, staffEl);
+conveyor.hide();
+
 // ---- the course controller (map + unlock + stars) ----
 const course = C.mount({
   mountEl: document.getElementById("app"),
-  course: COURSE, store, onPlay: startLesson,
+  course: COURSE, store, onPlay: startLesson, onFreePractice: openFreePractice,
 });
 $("backBtn").onclick = endToMap;
 
@@ -228,9 +234,11 @@ function startLesson(lesson){
     lesson, pool, isPlay,
     target: isPlay ? CFG.playTarget : (lesson.type==="practice" ? CFG.practiceTarget : CFG.quizTarget),
     correct:0, attempts:0, wrongThisPrompt:0,
-    hearts: CFG.hearts, times:[], lastT:0, lastPc:null,
+    hearts: CFG.hearts, times:[], lastT:0,
     prompt:null, awaiting:false, ninjaMs: CFG.ninjaStartMs, over:false,
+    convStarted:false, queuePc:null,   // conveyor lookahead (untimed play mode)
   };
+  conveyor.hide();
   if (isPlay){ heartsEl.hidden = false; drawHearts(); }
   goalEl.textContent = isPlay
     ? `Hit ${CFG.playTarget} notes before the ninja runs you out of ❤`
@@ -267,37 +275,69 @@ function restoreControls(){
 restoreControls();
 
 function pickPc(){
+  // True weighted-random draw — repeats are allowed (feels more like real practice
+  // than a forced alternation, and a 2-note pool would otherwise just ping-pong).
   const pool = sess.pool;
   const weights = pool.map(pc => store.weightFor("pc:"+pc));
-  let sum = weights.reduce((a,b)=>a+b,0), pc;
-  for (let guard=0; guard<40; guard++){
-    let r = Math.random()*sum;
-    for (let i=0;i<pool.length;i++){ r -= weights[i]; if (r<=0){ pc = pool[i]; break; } }
-    if (pool.length===1 || pc!==sess.lastPc) break;   // avoid immediate repeats
-  }
+  let sum = weights.reduce((a,b)=>a+b,0);
+  let r = Math.random()*sum, pc = pool[pool.length-1];
+  for (let i=0;i<pool.length;i++){ r -= weights[i]; if (r<=0){ pc = pool[i]; break; } }
   return pc;
+}
+
+// HTML for one prompt (letter or staff note) — reused by the conveyor slots
+function promptInner(pc){
+  return state.promptStyle === "staff"
+    ? staffSvg(pc)
+    : `<span class="root">${letterFor(pc)}</span>`;
 }
 
 function nextPrompt(){
   if (!sess || sess.over) return;
-  const pc = pickPc();
-  sess.lastPc = pc;
-  sess.prompt = { pc, midi: midiFor(pc) };
   sess.wrongThisPrompt = 0;
   fbEl.className = "feedback"; fbEl.textContent = "";
   piano.clear();   // release any latched keys so each prompt starts fresh (mouse/touch)
   eyebrowEl.textContent = sess.lesson.title;
 
+  // The conveyor (prev/current/next) runs in untimed "play the note" lessons only.
+  // Timed games (and timed/ear-only free practice) stay single-prompt so a visible
+  // lookahead can't be used to pre-plan and trivialize the challenge.
+  const earOnly = !!sess.earOnly, timed = !!sess.timed;
+  const useConveyor = state.mode === "play" && !sess.isPlay && !earOnly && !timed;
+
+  // With the conveyor, the current note is the one we queued last round.
+  const pc = (useConveyor && sess.convStarted) ? sess.queuePc : pickPc();
+  sess.prompt = { pc, midi: midiFor(pc) };
+
   if (state.mode === "name"){
-    // highlight the key, ask for its name
+    conveyor.hide(); sess.convStarted = false;
     answersEl.hidden = false; barEl.style.opacity = 0; stopTimer();
     promptEl.hidden = false; staffEl.hidden = true;
     promptEl.innerHTML = `<span class="root" style="font-size:.5em">Name this key</span>`;
     piano.highlight([pc]);
     renderNameChips();
+  } else if (earOnly){
+    conveyor.hide(); sess.convStarted = false;
+    answersEl.hidden = true; sess.awaiting = true;
+    staffEl.hidden = true; promptEl.hidden = false;
+    promptEl.innerHTML = `<span class="root" style="font-size:.5em">🔊 Play what you hear</span>`;
+    Trainer.audio.playNote(sess.prompt.midi, 800);
+    if (timed) startTimer();
+  } else if (useConveyor){
+    answersEl.hidden = true; sess.awaiting = true;
+    promptEl.hidden = true; staffEl.hidden = true;
+    conveyor.show();
+    sess.queuePc = pickPc();                          // peek the upcoming note
+    if (!sess.convStarted){
+      sess.convStarted = true;
+      conveyor.reset(promptInner(pc), promptInner(sess.queuePc));
+    } else {
+      conveyor.advance(promptInner(sess.queuePc));    // slide: next → current
+    }
   } else {
-    answersEl.hidden = true;
-    sess.awaiting = true;
+    // timed ninja / timed free-practice drill: single prompt, no lookahead
+    conveyor.hide(); sess.convStarted = false;
+    answersEl.hidden = true; sess.awaiting = true;
     if (state.promptStyle === "staff"){
       promptEl.hidden = true; staffEl.hidden = false; renderStaff(pc);
     } else {
@@ -305,7 +345,7 @@ function nextPrompt(){
       promptEl.classList.remove("pop"); void promptEl.offsetWidth; promptEl.classList.add("pop");
       promptEl.innerHTML = `<span class="root">${letterFor(pc)}</span>`;
     }
-    if (sess.isPlay) startTimer();
+    if (sess.isPlay || timed) startTimer();
   }
   sess.lastT = perfNow();
 }
@@ -356,8 +396,8 @@ function resolve(ok, skip){
   if (!ok && state.mode==="play") piano.highlight([pc]);
 
   const delay = ok ? (sess.isPlay ? 360 : 520) : 780;
-  const done = sess.isPlay
-    ? (sess.hearts <= 0 || sess.correct >= sess.target)
+  const done = sess.endless ? false
+    : sess.isPlay ? (sess.hearts <= 0 || sess.correct >= sess.target)
     : (sess.attempts >= sess.target);
   if (done){ sess.over = true; setTimeout(finish, delay); }
   else setTimeout(nextPrompt, delay);
@@ -382,6 +422,7 @@ function finish(){
 
 function showResult(stars, won, acc){
   const lesson = sess.lesson;
+  conveyor.hide();
   answersEl.hidden = true; barEl.style.opacity = 0; heartsEl.hidden = true;
   promptEl.hidden = false; staffEl.hidden = true;
   eyebrowEl.textContent = won ? "Lesson complete" : "Give it another go";
@@ -397,9 +438,78 @@ function showResult(stars, won, acc){
 }
 
 function endToMap(){
-  stopTimer(); sess = null; piano.clear();
+  stopTimer(); sess = null; piano.clear(); conveyor.hide();
   restoreControls();
   course.showMap();
+}
+
+// =====================================================================
+//  FREE PRACTICE — per-unit, customizable drill (this unit's notes only)
+// =====================================================================
+function openFreePractice(unit){
+  stopTimer(); sess = null; conveyor.hide(); piano.clear();
+  course.showLesson(); restoreControls();
+  answersEl.hidden = true; barEl.style.opacity = 0; heartsEl.hidden = true;
+  promptEl.hidden = false; staffEl.hidden = true;
+  eyebrowEl.textContent = unit.title;
+  promptEl.innerHTML = `<span class="root" style="font-size:.5em">⚙️ Free Practice</span>`;
+  goalEl.textContent = "";
+  const notes = (unit._notes && unit._notes.length) ? unit._notes : [0,2,4,5,7,9,11];
+  fbEl.className = "feedback";
+  fbEl.innerHTML = `<div class="freepanel">
+      <div class="fp-sec"><div class="fp-lbl">Notes from this unit</div>
+        <div class="chips" id="fpNotes">${notes.map(pc=>`<button class="chip on" data-pc="${pc}">${letterFor(pc)}</button>`).join("")}</div></div>
+      <div class="fp-sec switch-list">
+        <label class="switch"><input type="checkbox" id="fpEar" /><span class="track"></span><span class="txt">Ear-only — hide the note, play what you hear</span></label>
+        <label class="switch"><input type="checkbox" id="fpWeak" /><span class="track"></span><span class="txt">Weak-spot focus — drill your most-missed notes</span></label>
+        <label class="switch"><input type="checkbox" id="fpTimed" /><span class="track"></span><span class="txt">Timed — a countdown on every note</span></label>
+      </div>
+    </div>`;
+  controlsEl.hidden = false;
+  controlsEl.innerHTML = `<button id="fpStart">Start →</button><button id="fpBack" class="secondary">← Map</button>`;
+  fbEl.querySelectorAll("#fpNotes .chip").forEach(ch => ch.onclick = ()=> ch.classList.toggle("on"));
+  $("fpStart").onclick = ()=>{
+    const sel = [...fbEl.querySelectorAll("#fpNotes .chip.on")].map(c=>+c.dataset.pc);
+    if (!sel.length) return;   // need at least one note
+    startFree(unit, { notes: sel,
+      earOnly: $("fpEar").checked, weakSpot: $("fpWeak").checked, timed: $("fpTimed").checked });
+  };
+  $("fpBack").onclick = endToMap;
+}
+
+function startFree(unit, opts){
+  stopTimer(); restoreControls();
+  let pool = opts.notes.slice();
+  if (opts.weakSpot){
+    const weak = pool.filter(pc => (store.misses["pc:"+pc]||0) > 0);
+    if (weak.length) pool = weak;   // fall back to all if nothing missed yet
+  }
+  answersEl.hidden = true; staffEl.hidden = true; promptEl.hidden = false; heartsEl.hidden = true;
+  barEl.style.opacity = 0; fbEl.className = "feedback"; fbEl.textContent = "";
+  sess = {
+    lesson: { id:"free-u"+unit._idx, type:"practice", title:"Free · "+unit.title },
+    freeUnit: unit, pool, isPlay:false, target:Infinity,
+    correct:0, attempts:0, wrongThisPrompt:0, hearts:0, times:[], lastT:0,
+    prompt:null, awaiting:false, over:false, convStarted:false, queuePc:null,
+    earOnly:opts.earOnly, timed:opts.timed, endless:true,
+  };
+  conveyor.hide();
+  goalEl.textContent = "Free practice — press Stop when you're done";
+  controlsEl.innerHTML = `<button id="hearBtn" class="playbtn" aria-label="Hear it" title="Hear it"><span class="tri">▶</span></button>
+      <button id="fpStop" class="secondary">Stop ⏹</button>`;
+  $("hearBtn").onclick = ()=>{ if (sess && sess.prompt) Trainer.audio.playNote(sess.prompt.midi, 700); };
+  $("fpStop").onclick = ()=> finishFree();
+  updateStats();
+  nextPrompt();
+}
+
+function finishFree(){
+  stopTimer(); piano.clear(); conveyor.hide();
+  if (!sess){ return endToMap(); }
+  const unit = sess.freeUnit;
+  const acc = sess.attempts ? sess.correct/sess.attempts : 0;
+  showResult(C.starsFor(acc), true, acc);     // reuse the result card (no unlock gating)
+  $("retryBtn").onclick = ()=>{ restoreControls(); openFreePractice(unit); };  // retry re-opens the panel
 }
 
 // ---- feedback + stats + hearts ----
@@ -434,7 +544,7 @@ function startTimer(){
 function stopTimer(){ if (timerId){ clearInterval(timerId); timerId = null; } barEl.style.transform = "scaleX(1)"; }
 
 // ---- treble-clef staff renderer (C4–B4, ledger line for middle C) ----
-function renderStaff(pc){
+function staffInner(pc){
   // diatonic value: C=0..B=6 within octave; E4 sits on the bottom line
   const LI = {0:0,2:1,4:2,5:3,7:4,9:5,11:6}; // pc -> letter index
   const value = LI[pc] + 7*4;                // octave 4
@@ -447,8 +557,10 @@ function renderStaff(pc){
   if (y > 112) s += `<line class="ledger" x1="${cx-15}" y1="${y}" x2="${cx+15}" y2="${y}"/>`; // C4 ledger
   s += `<ellipse class="head" cx="${cx}" cy="${y}" rx="9" ry="6.5" transform="rotate(-18 ${cx} ${y})"/>`;
   s += `<line class="stem" x1="${cx+8}" y1="${y-2}" x2="${cx+8}" y2="${y-42}"/>`;
-  staffEl.innerHTML = s;
+  return s;
 }
+function staffSvg(pc){ return `<svg class="conv-staff" viewBox="0 0 240 150" width="186" aria-hidden="true">${staffInner(pc)}</svg>`; }
+function renderStaff(pc){ staffEl.innerHTML = staffInner(pc); }
 
 // ---- settings wiring ----
 function wireSeg(id, key, after){
@@ -460,8 +572,8 @@ function wireSeg(id, key, after){
     if (after) after();
   });
 }
-wireSeg("modeSeg", "mode", ()=>{ if (sess && !sess.over) nextPrompt(); });
-wireSeg("styleSeg", "promptStyle", ()=>{ if (sess && !sess.over && state.mode==="play") nextPrompt(); });
+wireSeg("modeSeg", "mode", ()=>{ if (sess && !sess.over){ sess.convStarted = false; nextPrompt(); } });
+wireSeg("styleSeg", "promptStyle", ()=>{ if (sess && !sess.over && state.mode==="play"){ sess.convStarted = false; nextPrompt(); } });
 $("resetBtn").onclick = ()=>{ course.resetProgress(); shell.closeSettings(); };
 </script>
 </body>

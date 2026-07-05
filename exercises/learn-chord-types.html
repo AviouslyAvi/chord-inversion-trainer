@@ -200,7 +200,7 @@ const eyebrowEl=$("eyebrow"), promptEl=$("prompt"), heartsEl=$("hearts"),
       sMaster=$("sMaster"), sScore=$("sScore"), sGoal=$("sGoal"), sAcc=$("sAcc");
 
 // ---- course controller ----
-const course = C.mount({ mountEl: document.getElementById("app"), course: COURSE, store, onPlay: startLesson });
+const course = C.mount({ mountEl: document.getElementById("app"), course: COURSE, store, onPlay: startLesson, onFreePractice: openFreePractice });
 $("backBtn").onclick = endToMap;
 
 // =====================================================================
@@ -212,9 +212,11 @@ const CFG = {
   playTarget: 12,       // correct hits to beat a boss
   hearts: 3,
   ninjaStartMs: 4600, ninjaMinMs: 2200, ninjaStepMs: 180,
+  freeTimedMs: 6000,    // fixed (non-accelerating) countdown for timed free practice
 };
 
-function startLesson(lesson){
+function startLesson(lesson, opts){
+  opts = opts || {};
   stopTimer();
   course.showLesson();
   answersEl.hidden = true; controlsEl.hidden = false; heartsEl.hidden = true;
@@ -225,14 +227,30 @@ function startLesson(lesson){
   if (lesson.type === "intro") return showPrimer(lesson);
 
   const isPlay = lesson.type === "play";
+  const types = lesson.q.slice();
+  // Free practice can drill only your most-missed types, but the answer chips
+  // still show every selected type (a single-chip quiz would be trivial).
+  let pool = types.slice();
+  if (opts.weakSpot){
+    const weak = pool.filter(t => (store.misses["type:"+t]||0) > 0);
+    if (weak.length) pool = weak;
+  }
   sess = {
-    lesson, types: lesson.q.slice(), inv: lesson.inv, isPlay,
-    mastery: Object.fromEntries(lesson.q.map(t=>[t,0])),   // consecutive-correct per type
+    lesson, types, pool, inv: lesson.inv, isPlay,
+    mastery: Object.fromEntries(types.map(t=>[t,0])),   // consecutive-correct per type
     correct:0, attempts:0, answered:false,
     hearts: CFG.hearts, target: CFG.playTarget, ninjaMs: CFG.ninjaStartMs,
     prompt:null, over:false,
+    free: !!opts.free, endless: !!opts.endless, earOnly: !!opts.earOnly,
+    timed: !!opts.timed, freeUnit: opts.unit || null,
   };
-  if (isPlay){
+  if (sess.free){
+    goalEl.textContent = "Free practice — press Stop when you're done";
+    controlsEl.innerHTML = `<button id="hearBtn" class="playbtn" aria-label="Hear it" title="Hear it"><span class="tri">▶</span></button>
+        <button id="fpStop" class="secondary">Stop ⏹</button>`;
+    $("hearBtn").onclick = hearCurrent;
+    $("fpStop").onclick = finishFree;
+  } else if (isPlay){
     heartsEl.hidden = false; drawHearts();
     goalEl.textContent = `Name ${CFG.playTarget} chords before the timer runs out your ❤`;
   } else {
@@ -272,8 +290,13 @@ function restoreControls(){
 }
 restoreControls();
 
-// pick the next chord: a type that isn't mastered yet (learn/review) or any (boss)
+// pick the next chord: a type that isn't mastered yet (learn/review) or any (boss/free)
 function pickType(){
+  // Endless free practice draws uniformly from the (possibly weak-spot-filtered) pool.
+  if (sess.endless){
+    const p = sess.pool.length ? sess.pool : sess.types;
+    return p[Math.floor(Math.random()*p.length)];
+  }
   const pool = sess.isPlay
     ? sess.types
     : sess.types.filter(t => sess.mastery[t] < CFG.masterN);
@@ -301,11 +324,17 @@ function nextPrompt(){
   fbEl.className = "feedback"; fbEl.textContent = "";
   eyebrowEl.textContent = sess.lesson.title;
   promptEl.classList.remove("pop"); void promptEl.offsetWidth; promptEl.classList.add("pop");
-  promptEl.innerHTML = `<span class="qual" style="font-size:.6em">🎹 What type of chord?</span>`;
-  piano.clear(); piano.highlight(sess.prompt.pcs);
+  piano.clear();
+  if (sess.earOnly){
+    // ear-only: keep the keys dark, judge purely by sound
+    promptEl.innerHTML = `<span class="qual" style="font-size:.6em">🔊 Name what you hear</span>`;
+  } else {
+    promptEl.innerHTML = `<span class="qual" style="font-size:.6em">🎹 What type of chord?</span>`;
+    piano.highlight(sess.prompt.pcs);
+  }
   renderAnswers();
-  if (state.autoHear) setTimeout(hearCurrent, 260);
-  if (sess.isPlay) startTimer();
+  if (state.autoHear || sess.earOnly) setTimeout(hearCurrent, 260);
+  if (sess.isPlay || sess.timed) startTimer();
 }
 
 function renderAnswers(){
@@ -337,7 +366,7 @@ function resolve(ok, skip, chip){
     if (!sess.isPlay){ sess.mastery[p.typeKey] = Math.min(CFG.masterN, sess.mastery[p.typeKey] + 1); }
     if (chip) chip.classList.add("right");
     setFb(true, sess.isPlay ? "🥷 "+sess.correct : "✅ "+CHORD_TYPES[p.typeKey].label);
-    sess.ninjaMs = Math.max(CFG.ninjaMinMs, sess.ninjaMs - CFG.ninjaStepMs);
+    if (sess.isPlay) sess.ninjaMs = Math.max(CFG.ninjaMinMs, sess.ninjaMs - CFG.ninjaStepMs);
   } else {
     store.bumpMiss("type:"+p.typeKey);
     if (!sess.isPlay) sess.mastery[p.typeKey] = 0;   // reset that skill's streak
@@ -349,8 +378,8 @@ function resolve(ok, skip, chip){
   store.save(); updateStats(); renderMasterRow();
 
   const delay = ok ? 620 : 950;
-  const done = sess.isPlay
-    ? (sess.hearts <= 0 || sess.correct >= sess.target)
+  const done = sess.endless ? false
+    : sess.isPlay ? (sess.hearts <= 0 || sess.correct >= sess.target)
     : sess.types.every(t => sess.mastery[t] >= CFG.masterN);
   if (done){ sess.over = true; setTimeout(finish, delay); }
   else setTimeout(nextPrompt, delay);
@@ -390,6 +419,54 @@ function showResult(stars, won, acc){
 
 function endToMap(){ stopTimer(); sess = null; piano.clearHighlight(); restoreControls(); course.showMap(); }
 
+// =====================================================================
+//  FREE PRACTICE — per-unit, customizable (this unit's chord types only)
+// =====================================================================
+function openFreePractice(unit){
+  stopTimer(); sess = null; piano.clearHighlight();
+  course.showLesson(); restoreControls();
+  answersEl.hidden = true; heartsEl.hidden = true; masterrowEl.hidden = true; barEl.style.opacity = 0;
+  eyebrowEl.textContent = unit.title;
+  promptEl.innerHTML = `<span class="root" style="font-size:.5em">⚙️ Free Practice</span>`;
+  goalEl.textContent = "";
+  const qtypes = (unit._qtypes && unit._qtypes.length) ? unit._qtypes : ["maj","min","dim"];
+  fbEl.className = "feedback";
+  fbEl.innerHTML = `<div class="freepanel">
+      <div class="fp-sec"><div class="fp-lbl">Chord types from this unit</div>
+        <div class="chips" id="fpTypes">${qtypes.map(q=>`<button class="chip on" data-q="${q}">${CHORD_TYPES[q].label}</button>`).join("")}</div></div>
+      <div class="fp-sec switch-list">
+        <label class="switch"><input type="checkbox" id="fpInv" /><span class="track"></span><span class="txt">Inverted review — light up 1st / 2nd / 3rd inversions (harder)</span></label>
+        <label class="switch"><input type="checkbox" id="fpWeak" /><span class="track"></span><span class="txt">Weak-spot focus — your most-missed types</span></label>
+        <label class="switch"><input type="checkbox" id="fpEar" /><span class="track"></span><span class="txt">Ear-only — keep the keys dark, name what you hear</span></label>
+        <label class="switch"><input type="checkbox" id="fpTimed" /><span class="track"></span><span class="txt">Timed — a countdown on every chord</span></label>
+      </div>
+    </div>`;
+  controlsEl.hidden = false;
+  controlsEl.innerHTML = `<button id="fpStart">Start →</button><button id="fpBack" class="secondary">← Map</button>`;
+  fbEl.querySelectorAll("#fpTypes .chip").forEach(ch => ch.onclick = ()=> ch.classList.toggle("on"));
+  $("fpStart").onclick = ()=>{
+    const q = [...fbEl.querySelectorAll("#fpTypes .chip.on")].map(c=>c.dataset.q);
+    if (!q.length) return;   // need at least one type
+    const synthetic = {
+      id:"free-ct"+unit._idx, type:"review", title:"Free · "+unit.title,
+      q, inv: $("fpInv").checked ? "any" : "root",
+    };
+    startLesson(synthetic, { free:true, endless:true,
+      earOnly:$("fpEar").checked, weakSpot:$("fpWeak").checked, timed:$("fpTimed").checked, unit });
+  };
+  $("fpBack").onclick = endToMap;
+}
+
+function finishFree(){
+  stopTimer(); piano.clearHighlight();
+  if (!sess){ return endToMap(); }
+  const unit = sess.freeUnit;
+  masterrowEl.hidden = true; answersEl.hidden = true; heartsEl.hidden = true;
+  const acc = sess.attempts ? sess.correct/sess.attempts : 0;
+  showResult(C.starsFor(acc), true, acc);                 // reuse result card (no unlock gating)
+  $("retryBtn").onclick = ()=>{ restoreControls(); openFreePractice(unit); };   // retry re-opens the panel
+}
+
 // ---- feedback / stats / hearts / mastery row ----
 function setFb(good, msg){ fbEl.className = "feedback " + (good?"good":"bad"); fbEl.textContent = msg; }
 function drawHearts(){ let h=""; for (let i=0;i<CFG.hearts;i++) h += `<span class="${i<sess.hearts?"":"off"}">❤</span>`; heartsEl.innerHTML = h; }
@@ -402,7 +479,7 @@ function updateStats(){
   sAcc.textContent = sess.attempts ? Math.round(100*sess.correct/sess.attempts)+"%" : "—";
 }
 function renderMasterRow(){
-  if (!sess || sess.isPlay){ masterrowEl.hidden = true; return; }
+  if (!sess || sess.isPlay || sess.free){ masterrowEl.hidden = true; return; }
   masterrowEl.hidden = false;
   masterrowEl.innerHTML = sess.types.map(t=>{
     const v = sess.mastery[t], done = v>=CFG.masterN;
@@ -415,7 +492,7 @@ function renderMasterRow(){
 function perfNow(){ return (window.performance && performance.now) ? performance.now() : new Date().getTime(); }
 function startTimer(){
   stopTimer();
-  const dur = sess.ninjaMs, start = perfNow();
+  const dur = (sess.timed && !sess.isPlay) ? CFG.freeTimedMs : sess.ninjaMs, start = perfNow();
   barEl.style.opacity = 1; barEl.style.transform = "scaleX(1)";
   // setInterval (not rAF) so the countdown survives a blurred/hidden tab
   timerId = setInterval(function(){
