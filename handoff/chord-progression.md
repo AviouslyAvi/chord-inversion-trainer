@@ -190,19 +190,41 @@ Naturals-first, full quality+inversion+root ladder.
   (intended):** the free-play `chord-id.html` / `chord-inversion.html` now include
   these 4 types by default (all type-chips start "on") — verified no ID ambiguity
   (only `dim7` is transposition-symmetric; the 4 new sets are unique).
-- Advanced *extended* (5-note 9ths, aug7, etc.) still open as a future tier — would
-  need `INV_NAMES` extended past 3rd inversion.
+- [x] **Extended tier built** (2026-07-04) — the deferred "5-note 9ths + aug7" tier.
+  Added 4 chord types to `theory.js` (all `ext:true`): `aug7 [0,4,8,10]` (7♯5, 4-note),
+  `dom9 [0,4,7,10,2]`, `maj9 [0,4,7,11,2]`, `min9 [0,3,7,10,2]` (the true **5-note**
+  chords). Extended `INV_NAMES` with **"4th inversion"** — turned out to be a one-line
+  change: `voicing()`/`voicingMidi()` were already fully general over note-count and
+  inversion index, and `skillsFor()`'s `inv<n` guard already drops aug7's non-existent
+  4th inversion. **Placement (user's call):** Course B (play) + free-play
+  `chord-inversion.html` only — **kept OUT of identification** (`chord-id.html`), since
+  9ths are ambiguous/hard by ear. Mechanism: the `ext` flag; `chord-id.html` filters
+  `!v.ext` from its default type-set + chip list. **Course B** gained `Unit 7 · Extended
+  chords (white keys)` (`i19`–`i22`: Augmented 7th → Dominant 9th (+4th inv) → Major &
+  minor 9ths → Extended review mixed) + `Unit 8 · Extended Mastery (all keys)` (`i23`).
+  **5-note voicing fix:** a 9th spans a full 9th, so inverting it pushes the top voice
+  past the piano's MIDI-84 ceiling at the usual `BASE=57` (dom9 2nd-inv → MIDI 89). Any
+  lesson containing a 5-note quality now anchors at `BASE=48` (`sess.base`) so every
+  inversion fits (tops out ~80). `INV_SHORT` also got a "4th" entry. All new ids, no old
+  ids touched (progress-safe). **Browser-verified on port 8872:** Course B = 8 units/24
+  tiles, no console errors; drove a live **C dom9 4th-inversion** prompt → played the 5
+  notes [50,60,64,67,70] → scored ✅ correct; exhaustive check that every extended
+  voicing (range 48–80) lands on a real piano key (0 missing); `chord-id` shows 12 types
+  (no extended), `chord-inversion` shows 16 + a new "4th inversion" chip.
+- Genuine *extended past 4-note-in-a-9th* (5-note 11ths/13ths, altered dominants) still
+  open as a future tier — would need `INV_NAMES` past 4th inversion and 6-note voicings.
 - [x] **Course A boss/timed lessons play-tested** (t6 Triad, s5 Seventh, m2 Grand).
   Verified in browser: all three init with correct type sets/chips/hearts/target;
   **win** path (12 correct → speed ramps 4600→2440ms, 5 stars, 100%); **lose** path
   (3 misses → hearts 3→0, game over, 0 stars, right answer revealed each miss);
   result + retry/map; no console errors.
-- [ ] **Finding to fix:** Course A boss timer uses `requestAnimationFrame`
+- [x] **Fixed (`04120a5`):** Course A boss timer used `requestAnimationFrame`
   (`startTimer`, ~line 410 of `learn-chord-types.html`). rAF pauses in a hidden/
   background tab, so the countdown freezes when the player tabs away (and can snap to
   time-up on return). `learn-keys.html` deliberately uses `setInterval` for this exact
   reason. Fix = swap Course A's `startTimer`/`stopTimer` to the `setInterval` shape
   learn-keys uses. Low-risk, recommended. (Only manifests in a backgrounded tab; the
   boss plays correctly when focused.)
-- [ ] **Nothing committed yet** — all suite work is WIP (untracked/modified). User to
-  review before any commit.
+- [x] **Committed** — the guided-course suite (Courses A & B, advanced units, boss-timer
+  fix) and the extended tier are all on `master`. The rAF boss-timer finding above was
+  fixed in `04120a5`.

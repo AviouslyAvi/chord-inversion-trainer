@@ -76,7 +76,7 @@ const REVEAL_AFTER = 3;
 const store = Trainer.store.open("chord-id");
 
 const state = {
-  types: new Set(Object.keys(CHORD_TYPES)),
+  types: new Set(Object.keys(CHORD_TYPES).filter(k=>!CHORD_TYPES[k].ext)),  // extended (9ths, aug7) are hard/ambiguous by ear — kept out of identification
   roots: new Set(ROOTS),
   mode: "see",                 // "see" (keyboard-chord) | "hear" (ear-chord)
   current: null,
@@ -377,7 +377,7 @@ function renderWeakList(){
 // ---- settings chips + controls ----
 function buildChips(){
   const tc = document.getElementById("typeChips");
-  Object.entries(CHORD_TYPES).forEach(([k,v])=>{
+  Object.entries(CHORD_TYPES).filter(([,v])=>!v.ext).forEach(([k,v])=>{
     const c=document.createElement("div"); c.className="chip on"; c.textContent=v.label;
     c.onclick=()=>{ toggle(state.types,k); c.classList.toggle("on"); ensureNonEmpty(); };
     tc.appendChild(c);

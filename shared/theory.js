@@ -19,8 +19,15 @@ Trainer.theory = (function(){
     "dim7": {label:"diminished 7th",symbol:"dim7",intervals:[0,3,6,9]},
     "m7b5": {label:"half-diminished 7th", symbol:"m7♭5", intervals:[0,3,6,10]},
     "add9": {label:"add 9",         symbol:"add9",intervals:[0,4,7,2]},
+    // Extended tier (ext:true). aug7 is 4-note; the 9ths are true 5-note chords
+    // that reach a 4th inversion. `ext` lets identification exercises opt out of
+    // these (they're ambiguous/hard by ear) while play/inversion exercises keep them.
+    "aug7": {label:"augmented 7th", symbol:"7♯5", intervals:[0,4,8,10],    ext:true},
+    "dom9": {label:"dominant 9th",  symbol:"9",    intervals:[0,4,7,10,2], ext:true},
+    "maj9": {label:"major 9th",     symbol:"maj9", intervals:[0,4,7,11,2], ext:true},
+    "min9": {label:"minor 9th",     symbol:"min9", intervals:[0,3,7,10,2], ext:true},
   };
-  const INV_NAMES = ["Root position","1st inversion","2nd inversion","3rd inversion"];
+  const INV_NAMES = ["Root position","1st inversion","2nd inversion","3rd inversion","4th inversion"];
 
   // interval in semitones (0..12) -> names
   const INTERVALS = {

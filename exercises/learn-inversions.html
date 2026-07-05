@@ -127,7 +127,7 @@ const store = Trainer.store.open("learn-inversions");
 
 const NATURALS = [0,2,4,5,7,9,11];               // white-key roots
 const ROOTS_ALL = [0,1,2,3,4,5,6,7,8,9,10,11];
-const INV_SHORT = ["root","1st","2nd","3rd"];
+const INV_SHORT = ["root","1st","2nd","3rd","4th"];
 const REVEAL_AFTER = 3;                            // wrong tries on a prompt before notes reveal
 const BASE = 57;                                   // voicing anchor (A3) — inversions sit mid-keyboard
 
@@ -173,6 +173,19 @@ const COURSE = {
     ]},
     { title:"Unit 6 · Advanced Mastery (all keys)", lessons:[
       { id:"i18", type:"review", title:"Advanced Mastery 🎉",    q:["aug","sus2","sus4","m7b5","add9"], inv:[0,1,2,3], roots:"all" },
+    ]},
+    // Extended tier — the first 5-note chords in the course. The 9ths reach a
+    // 4th inversion (five voices → five rotations); aug7 stays 4-note (skillsFor's
+    // inv<n guard drops its 4th inversion automatically). Blocked intro contrasts
+    // each extension against its 7th sibling (9 vs dom7), then a spaced finale.
+    { title:"Unit 7 · Extended chords (white keys)", lessons:[
+      { id:"i19", type:"learn",  title:"Augmented 7th",          q:["dom7","aug7"],               inv:[0,1,2,3],   roots:"naturals" },
+      { id:"i20", type:"learn",  title:"Dominant 9th (+ 4th inv)", q:["dom7","dom9"],             inv:[0,1,2,3,4], roots:"naturals" },
+      { id:"i21", type:"learn",  title:"Major & minor 9ths",     q:["maj9","min9"],               inv:[0,1,2,3,4], roots:"naturals" },
+      { id:"i22", type:"review", title:"Extended review (mixed)",q:["dom9","maj9","min9","aug7"], inv:[0,1,2,3,4], roots:"naturals" },
+    ]},
+    { title:"Unit 8 · Extended Mastery (all keys)", lessons:[
+      { id:"i23", type:"review", title:"Extended Mastery 🎉",    q:["dom9","maj9","min9","aug7"], inv:[0,1,2,3,4], roots:"all" },
     ]},
   ],
 };
@@ -250,8 +263,12 @@ function startLesson(lesson){
   if (lesson.type === "intro") return showPrimer(lesson);
 
   const skills = skillsFor(lesson);
+  // 5-note chords (9ths) span a full 9th; inverting them pushes the top voice past
+  // the piano's ceiling at the usual BASE. Drop the anchor for any lesson that
+  // contains a 5-note quality so every inversion fits on the keys (48 → tops out ~80).
+  const has5 = lesson.q.some(q => CHORD_TYPES[q].intervals.length >= 5);
   sess = {
-    lesson, skills,
+    lesson, skills, base: has5 ? 48 : BASE,
     roots: lesson.roots === "all" ? ROOTS_ALL : NATURALS,
     mastery: Object.fromEntries(skills.map(s=>[s.key,0])),
     correct:0, attempts:0, answered:false, wrongTries:0, lastAttemptSig:null,
@@ -321,7 +338,7 @@ function nextPrompt(){
   sess.prompt = {
     rootPc, typeKey: skill.q, inv: skill.inv, skillKey: skill.key,
     targetPcs: voicing(rootPc, skill.q, skill.inv),
-    midis: voicingMidi(rootPc, skill.q, skill.inv, BASE),
+    midis: voicingMidi(rootPc, skill.q, skill.inv, sess.base),
   };
   sess.answered = false; sess.wrongTries = 0; sess.lastAttemptSig = null;
   piano.clear(); piano.clearHighlight();
