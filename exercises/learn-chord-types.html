@@ -71,6 +71,18 @@
   .masterrow .m .d { width:7px; height:7px; border-radius:50%; background:var(--panel2); border:1px solid var(--border); }
   .masterrow .m .d.on { background:var(--good); border-color:transparent; }
   .masterrow .m.done { color:var(--good); }
+
+  /* ---- recap ribbon (identify-mode: a sliding history of chords you've named) ---- */
+  /* Reuses the shared .conveyor component, but shows PAST answers, never a preview —
+     previewing the upcoming type would spoil the whole point of identify-mode. */
+  .conveyor.recap { height:58px; margin:2px 0 6px; }
+  .conveyor.recap .conv-item { font-size:clamp(22px,5.5vw,34px); }
+  .conveyor.recap .rc { display:flex; align-items:center; gap:7px; }
+  .conveyor.recap .rc-q  { color:var(--muted); }
+  .conveyor.recap .rc-up { color:var(--muted); opacity:.5; }
+  .conveyor.recap .rc-ans.ok { color:var(--good); }
+  .conveyor.recap .rc-ans.no { color:var(--bad); }
+  .conveyor.recap .rc-ans .mk { font-size:.72em; }
 </style>
 </head>
 <body>
@@ -123,6 +135,7 @@
 <script src="../shared/store.js"></script>
 <script src="../shared/shell.js"></script>
 <script src="../shared/curriculum.js"></script>
+<script src="../shared/conveyor.js"></script>
 <script>
 "use strict";
 const T = Trainer.theory, C = Trainer.curriculum;
@@ -199,6 +212,18 @@ const eyebrowEl=$("eyebrow"), promptEl=$("prompt"), heartsEl=$("hearts"),
       answersEl=$("answers"), masterrowEl=$("masterrow"), controlsEl=$("controls"),
       sMaster=$("sMaster"), sScore=$("sScore"), sGoal=$("sGoal"), sAcc=$("sAcc");
 
+// ---- recap ribbon (sliding history of chords you've named — see CSS note) ----
+// Mounted just below the "What type?" prompt. The course owns the reveal timing;
+// the conveyor only slides. rc*() build one slot's HTML.
+const recap = Trainer.conveyor.create(promptEl.parentNode);
+recap.el.classList.add("recap");
+promptEl.parentNode.insertBefore(recap.el, heartsEl);
+recap.hide();
+const rcQ  = ()=> `<span class="rc rc-q">?</span>`;
+const rcUp = ()=> `<span class="rc rc-up">⬦</span>`;
+const rcAns = (typeKey, ok)=>
+  `<span class="rc rc-ans ${ok?"ok":"no"}"><span class="mk">${ok?"✓":"✗"}</span> ${CHORD_TYPES[typeKey].label}</span>`;
+
 // ---- course controller ----
 const course = C.mount({ mountEl: document.getElementById("app"), course: COURSE, store, onPlay: startLesson, onFreePractice: openFreePractice });
 $("backBtn").onclick = endToMap;
@@ -240,7 +265,7 @@ function startLesson(lesson, opts){
     mastery: Object.fromEntries(types.map(t=>[t,0])),   // consecutive-correct per type
     correct:0, attempts:0, answered:false,
     hearts: CFG.hearts, target: CFG.playTarget, ninjaMs: CFG.ninjaStartMs,
-    prompt:null, over:false,
+    prompt:null, over:false, recapStarted:false,
     free: !!opts.free, endless: !!opts.endless, earOnly: !!opts.earOnly,
     timed: !!opts.timed, freeUnit: opts.unit || null,
   };
@@ -279,7 +304,7 @@ function showPrimer(lesson){
   answersEl.hidden = true;
   controlsEl.innerHTML = `<button id="startBtn">Start →</button>`;
   $("startBtn").onclick = ()=>{ course.record(lesson.id, {stars:1}); restoreControls(); endToMap(); };
-  piano.clearHighlight();
+  piano.clearHighlight(); recap.hide();
 }
 
 function restoreControls(){
@@ -333,6 +358,18 @@ function nextPrompt(){
     piano.highlight(sess.prompt.pcs);
   }
   renderAnswers();
+
+  // recap ribbon: bring a fresh "?" into the now-slot. On the first prompt we
+  // seed the strip; after that we slide (the just-revealed answer drifts to prev).
+  recap.show();
+  if (!sess.recapStarted){
+    sess.recapStarted = true;
+    recap.reset(rcQ(), rcUp());          // now = "?", next = ⬦ (upcoming)
+  } else {
+    recap.advance(rcUp());               // revealed → prev, ⬦ → now, new ⬦ → next
+    recap.setCur(rcQ());                 // ...turn that incoming now-slot into "?"
+  }
+
   if (state.autoHear || sess.earOnly) setTimeout(hearCurrent, 260);
   if (sess.isPlay || sess.timed) startTimer();
 }
@@ -376,6 +413,7 @@ function resolve(ok, skip, chip){
     answersEl.querySelectorAll(".chip").forEach(c=>{ if (c.dataset.t===p.typeKey) c.classList.add("right"); });
   }
   store.save(); updateStats(); renderMasterRow();
+  if (sess.recapStarted) recap.setCur(rcAns(p.typeKey, ok));   // flip now-slot "?" → revealed type
 
   const delay = ok ? 620 : 950;
   const done = sess.endless ? false
@@ -386,7 +424,7 @@ function resolve(ok, skip, chip){
 }
 
 function finish(){
-  stopTimer(); piano.clearHighlight(); answersEl.hidden = true; heartsEl.hidden = true;
+  stopTimer(); piano.clearHighlight(); recap.hide(); answersEl.hidden = true; heartsEl.hidden = true;
   const acc = sess.attempts ? sess.correct/sess.attempts : 0;
   let stars, won;
   if (sess.isPlay){
@@ -417,13 +455,13 @@ function showResult(stars, won, acc){
   sess = null;
 }
 
-function endToMap(){ stopTimer(); sess = null; piano.clearHighlight(); restoreControls(); course.showMap(); }
+function endToMap(){ stopTimer(); sess = null; piano.clearHighlight(); recap.hide(); restoreControls(); course.showMap(); }
 
 // =====================================================================
 //  FREE PRACTICE — per-unit, customizable (this unit's chord types only)
 // =====================================================================
 function openFreePractice(unit){
-  stopTimer(); sess = null; piano.clearHighlight();
+  stopTimer(); sess = null; piano.clearHighlight(); recap.hide();
   course.showLesson(); restoreControls();
   answersEl.hidden = true; heartsEl.hidden = true; masterrowEl.hidden = true; barEl.style.opacity = 0;
   eyebrowEl.textContent = unit.title;
@@ -458,7 +496,7 @@ function openFreePractice(unit){
 }
 
 function finishFree(){
-  stopTimer(); piano.clearHighlight();
+  stopTimer(); piano.clearHighlight(); recap.hide();
   if (!sess){ return endToMap(); }
   const unit = sess.freeUnit;
   masterrowEl.hidden = true; answersEl.hidden = true; heartsEl.hidden = true;
