@@ -117,12 +117,29 @@ The guided courses are three self-contained pages, each built on the shared
 
 ---
 
+## ✅ DONE & verified in-browser (2026-07-05, branch `claude/cool-heisenberg-7ca8ee`)
+
+### Recap ribbon in `learn-chord-types.html` (was the skipped "conveyor")
+- Identify-mode still can't PREVIEW the upcoming prompt (the answer is the lit keys —
+  showing the next type spoils it). So the shared `Trainer.conveyor` is reused as a
+  **sliding history**: the now-slot shows `?` until you answer, then reveals the type
+  (green `✓` / red `✗`) and drifts to `prev` as a fresh `?` eases in. Same motion as the
+  other two courses, zero spoilers. Next-slot placeholder is `⬦`.
+- Mounted below the "What type?" prompt; `.conveyor.recap` style variant (58px, smaller
+  font, `.rc*` slot classes) lives in the page `<style>` (course-specific, not base.css).
+- `recap.reset()` on the first prompt, `recap.advance("⬦")`+`setCur(rcQ())` on each
+  subsequent one; reveal happens in `resolve()` via `recap.setCur(rcAns(type, ok))`.
+- Shows in learn/review/play + free practice (incl. ear-only/timed — history never
+  cheats). Hidden on primer, result, map, free-practice panel, and Stop.
+- Committed `bfc84d9`. Verified: `?`→reveal→slide-to-prev, wrong reveals red correct
+  type, hides on map/panel/Stop, no console errors.
+
 ## ⏳ REMAINING
 
-1. **Conveyor in `learn-chord-types.html`** — SKIPPED per handoff (identify-mode has no
-   "upcoming prompt" to preview). Revisit only if the user wants it.
-2. **Commit.** Nothing is committed yet. Suggested message groups: (a) whole-course
-   fixes, (b) conveyor, (c) free practice + timers. End commits with the Co-Authored-By line.
+- Nothing outstanding. All handoff items done + committed. Whole-course fixes / shared
+  conveyor / free practice + timers are on `master` (ebea6ee, 66cfa58, fb495e2); the
+  recap ribbon is on branch `claude/cool-heisenberg-7ca8ee` (bfc84d9) — **not yet merged
+  to master.**
 
 ---
 
@@ -133,4 +150,4 @@ The guided courses are three self-contained pages, each built on the shared
 - `shared/base.css` — stars, conveyor, free-practice tile/panel styles
 - `exercises/learn-keys.html` — conveyor + full Free Practice + labels + random
 - `exercises/learn-inversions.html` — Free Practice + ear-only + labels + random
-- `exercises/learn-chord-types.html` — labels only (Free Practice + conveyor + timed TODO)
+- `exercises/learn-chord-types.html` — labels + Free Practice + timed + **recap ribbon** (done)
